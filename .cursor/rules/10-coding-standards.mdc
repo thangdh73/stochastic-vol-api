@@ -1,0 +1,68 @@
+# Coding Standards
+
+## General
+
+- Use TypeScript where possible.
+- Avoid `any` unless there is a clear reason.
+- Write clean, readable, self-documenting code.
+- Use meaningful variable and function names.
+- Avoid magic numbers.
+- Keep functions short and focused.
+- Avoid unnecessary dependencies.
+- Do not rewrite large files unnecessarily.
+
+## Frontend
+
+For React / Next.js:
+
+- Prefer Functional Components and Hooks.
+- Prefer Tailwind CSS for styling.
+- Prefer small reusable components.
+- Use loading, error, and empty states.
+- Keep data-fetching logic separate from presentation components.
+- Use semantic HTML where possible.
+
+## Backend
+
+- Prefer modular architecture or clean architecture.
+- Keep route handlers thin.
+- Put business logic in services.
+- Put database logic in repositories/adapters.
+- Validate input at system boundaries.
+- Return consistent API response shapes.
+
+## Validation
+
+- Prefer Zod for schema validation.
+- Validate user input before using it.
+- Validate API request payloads.
+- Validate environment variables at startup where possible.
+
+## Error Handling
+
+- Use meaningful error messages.
+- Do not swallow exceptions silently.
+- Log errors with useful context.
+- Do not expose secrets or internal stack traces to end users.
+
+## Security
+
+- Never hard-code API keys, secrets, passwords, or tokens.
+- Use `.env` for secrets.
+- Do not commit `.env` files.
+- Use parameterised queries or ORM-safe APIs.
+- Check authentication and authorisation logic for protected features.
+
+## Git
+
+When suggesting commit messages, use Conventional Commits.
+
+Examples:
+
+```text
+feat: add project planning workflow
+fix: handle empty API response
+refactor: simplify auth middleware
+test: add regression test for login
+docs: update setup guide
+```

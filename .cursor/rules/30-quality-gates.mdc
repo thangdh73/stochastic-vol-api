@@ -1,0 +1,69 @@
+# Quality Gates and Planning Policy
+
+## Strict Planning Policy
+
+For any request that:
+
+- changes 2 or more files
+- adds a new feature
+- changes architecture
+- changes database schema
+- changes authentication or authorisation
+- affects deployment
+- has meaningful regression risk
+
+Do not write code immediately.
+
+First:
+
+1. Enter Plan mode.
+2. Inspect the codebase.
+3. Read relevant files:
+   - `docs/MEMORY.md`
+   - existing README/docs
+   - package/config files
+   - relevant source files
+4. Create or update `docs/PLAN.md`.
+5. Include:
+   - objective
+   - assumptions
+   - affected files
+   - implementation steps
+   - risks
+   - test strategy
+   - rollback plan
+6. Wait for the user to type `Proceed`.
+
+Only after confirmation should Agent mode modify files.
+
+## Small Changes
+
+For very small one-file changes, it is acceptable to implement directly, but still summarise:
+- what changed
+- why it changed
+- how to test
+
+## Completion Standard
+
+A task is complete only when:
+
+- code is implemented
+- tests are added or test steps are documented
+- security risks are checked
+- performance risks are noted
+- documentation is updated if needed
+- `docs/MEMORY.md` is updated for important decisions or lessons
+- final summary is provided
+
+## Final Summary Format
+
+Use this format after implementation:
+
+```text
+Summary:
+- Changed:
+- Why:
+- Tests:
+- Risks:
+- Next step:
+```

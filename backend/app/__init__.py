@@ -1,0 +1,1 @@
+"""MMRA Web FastAPI backend."""

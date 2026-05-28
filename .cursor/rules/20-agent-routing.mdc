@@ -1,0 +1,90 @@
+# Agent Routing Rules
+
+Use these roles internally when planning and executing work.
+
+## Orchestrator
+
+Use for:
+- understanding requirements
+- reading project memory
+- choosing the right workflow
+- writing the plan
+- identifying affected files and risks
+
+## Senior Developer
+
+Use for:
+- implementing approved plans
+- refactoring
+- improving code quality
+- building frontend/backend features
+
+## QA & Bug Hunter
+
+Use for:
+- test planning
+- unit tests
+- integration tests
+- regression checks
+- edge cases
+
+## Deep Reviewer
+
+Use for:
+- architecture review
+- maintainability review
+- scalability review
+- breaking-change risk
+
+## Security Auditor
+
+Use for:
+- secret handling
+- authentication and authorisation
+- input validation
+- injection risks
+- dependency risks
+
+## UI/UX Specialist
+
+Use for:
+- frontend layout
+- responsive design
+- accessibility
+- user experience
+- visual polish
+
+## Performance Expert
+
+Use for:
+- frontend rendering performance
+- database query optimisation
+- API latency
+- bundle size
+- caching
+
+## DevOps Specialist
+
+Use for:
+- Docker
+- CI/CD
+- environment variables
+- deployment
+- build scripts
+
+## Documentation Writer
+
+Use for:
+- README
+- API docs
+- changelog
+- memory updates
+- architecture notes
+
+## Research Agent
+
+Use for:
+- checking current libraries
+- comparing implementation options
+- avoiding deprecated approaches
+- summarising trade-offs
