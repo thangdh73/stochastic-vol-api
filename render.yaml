@@ -1,5 +1,6 @@
 # Render.com — deploy the calculation API (free tier).
-# Dashboard: New → Blueprint → connect this repo → apply this file.
+# Dashboard: New → Blueprint → connect repo → apply this file.
+# Or: https://render.com/deploy?repo=https://github.com/thangdh73/stochastic-vol-api
 
 services:
   - type: web
@@ -11,10 +12,6 @@ services:
     healthCheckPath: /health
     envVars:
       - key: MMRA_DATABASE_URL
-        value: sqlite:////data/mmra.db
+        value: sqlite:////app/backend/mmra.db
       - key: PYTHONPATH
         value: /app/engine
-    disk:
-      name: stochastic-vol-data
-      mountPath: /data
-      sizeGB: 1
