@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 $RenderUrl = if ($env:RENDER_API_URL) { $env:RENDER_API_URL.TrimEnd("/") } else { "https://stochastic-vol-api.onrender.com" }
-$MmraRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$MmraRoot = Split-Path -Parent $PSScriptRoot
 $PortfolioRoot = if ($env:PORTFOLIO_ROOT) { $env:PORTFOLIO_ROOT } else { "d:\1-Projects\thang-doan-portfolio" }
 
 Write-Host "Checking Render API at $RenderUrl/health ..."
