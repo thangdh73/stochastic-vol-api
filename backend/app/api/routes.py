@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+
+from ..auth.deps import require_auth
 
 from ..schemas.simulation import (
     DistributionPreviewRequest,
@@ -28,7 +30,7 @@ from ..services.engine_adapter import (
     validate_input,
 )
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
 
 
 API_FEATURES = [

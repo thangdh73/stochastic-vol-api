@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { APP_DOCUMENT_TITLE, APP_TAGLINE, APP_TITLE } from '../constants/appBranding'
+import { useAuth } from '../context/AuthContext'
 import {
   EstimatingMethodBanner,
   EstimatingMethodRouteGuard,
@@ -21,6 +22,8 @@ const MAIN_NAV = [
 
 export function Layout() {
   const { input, validation, simulation } = useWorkflow()
+  const { authRequired, email, logout } = useAuth()
+  const navigate = useNavigate()
   const status = computeModuleStatuses(input, validation, Boolean(simulation))
 
   useEffect(() => {
@@ -73,6 +76,23 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
+        {authRequired && email && (
+          <div className="sidebar-auth">
+            <span className="sidebar-auth-email" title={email}>
+              {email}
+            </span>
+            <button
+              type="button"
+              className="sidebar-auth-logout"
+              onClick={() => {
+                logout()
+                navigate('/login')
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </aside>
       <main className="main">
         <EstimatingMethodBanner />

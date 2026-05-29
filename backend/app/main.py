@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.persistence_routes import router as persistence_router
 from .api.routes import router as api_router
+from .auth.routes import router as auth_router
 from .db.database import init_db
 
 
@@ -31,6 +32,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(api_router)
 app.include_router(persistence_router)
 
@@ -38,6 +40,7 @@ app.include_router(persistence_router)
 @app.get("/health")
 def root_health():
     from .api.routes import API_FEATURES
+    from .auth.config import auth_enabled
     from .services.engine_adapter import ENGINE_VERSION, SCHEMA_VERSION
 
     return {
@@ -45,4 +48,5 @@ def root_health():
         "engine_version": ENGINE_VERSION,
         "schema_version": SCHEMA_VERSION,
         "api_features": API_FEATURES,
+        "auth_enabled": auth_enabled(),
     }

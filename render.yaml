@@ -14,3 +14,7 @@ services:
         value: sqlite:////app/backend/mmra.db
       - key: PYTHONPATH
         value: /app/engine
+      - key: MMRA_JWT_SECRET
+        sync: false
+      - key: MMRA_AUTH_USERS
+        sync: false

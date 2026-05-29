@@ -15,8 +15,20 @@ import type {
 import { prepareTankForApi } from '../utils/ensureSimulationReady'
 import { sanitizeInputForSave } from '../utils/sanitizeInputForSave'
 import { apiUrl } from './baseUrl'
+import { clearAuthSession, getAccessToken } from '../utils/authToken'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  const token = getAccessToken()
+  const headers: Record<string, string> = { ...JSON_HEADERS }
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (extra) {
+    const extraObj = extra instanceof Headers ? Object.fromEntries(extra.entries()) : extra
+    Object.assign(headers, extraObj as Record<string, string>)
+  }
+  return headers
+}
 
 function prepareContextForApi(
   context?: GroupDependencyContextPayload,
@@ -34,7 +46,17 @@ function prepareContextForApi(
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(apiUrl(path), init)
+  const res = await fetch(apiUrl(path), {
+    ...init,
+    headers: authHeaders(init?.headers),
+  })
+  if (res.status === 401) {
+    clearAuthSession()
+    if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+      const base = ((import.meta.env.BASE_URL as string | undefined) ?? '/').replace(/\/?$/, '/')
+      window.location.assign(`${base}login`)
+    }
+  }
   if (!res.ok) {
     let detail: unknown = res.statusText
     try {
@@ -59,7 +81,6 @@ export const api = {
     const payload = prepareTankForApi(input)
     return request<ValidationReport>('/api/validate', {
       method: 'POST',
-      headers: JSON_HEADERS,
       body: JSON.stringify(payload),
     })
   },
@@ -72,7 +93,6 @@ export const api = {
     const payload = prepareTankForApi(input)
     return request<SimulateResponse>('/api/simulate', {
       method: 'POST',
-      headers: JSON_HEADERS,
       body: JSON.stringify({
         input: payload,
         options: { include_arrays: includeArrays },
@@ -85,7 +105,6 @@ export const api = {
     const payload = prepareTankForApi(input)
     return request<ModulePreviewResponse>('/api/simulate/preview', {
       method: 'POST',
-      headers: JSON_HEADERS,
       body: JSON.stringify({ input: payload, scope }),
     })
   },
@@ -98,7 +117,6 @@ export const api = {
   ) =>
     request<DistributionPreviewResponse>('/api/simulate/distribution-preview', {
       method: 'POST',
-      headers: JSON_HEADERS,
       body: JSON.stringify({
         distribution,
         n_iterations: nIterations,
@@ -117,7 +135,6 @@ export const api = {
     const payload = prepareTankForApi(input)
     return request<PerturbationTornadoResponse>('/api/simulate/tornado-perturbation', {
       method: 'POST',
-      headers: JSON_HEADERS,
       body: JSON.stringify({
         input: payload,
         target,
@@ -133,7 +150,6 @@ export const api = {
   createProspect: (name: string, metadata: Record<string, unknown> = {}) =>
     request<Prospect>('/api/prospects', {
       method: 'POST',
-      headers: JSON_HEADERS,
       body: JSON.stringify({ name, metadata }),
     }),
 
@@ -145,7 +161,6 @@ export const api = {
   ) =>
     request<Prospect>(`/api/prospects/${id}`, {
       method: 'PATCH',
-      headers: JSON_HEADERS,
       body: JSON.stringify(patch),
     }),
 
@@ -161,7 +176,6 @@ export const api = {
     const payload = sanitizeInputForSave(input)
     return request<InputSet>(`/api/prospects/${prospectId}/input-sets`, {
       method: 'POST',
-      headers: JSON_HEADERS,
       body: JSON.stringify(payload),
     })
   },
@@ -181,7 +195,6 @@ export const api = {
       `/api/prospects/${prospectId}/simulation-runs`,
       {
         method: 'POST',
-        headers: JSON_HEADERS,
         body: JSON.stringify({ input, options: { include_arrays: true } }),
       },
     ),

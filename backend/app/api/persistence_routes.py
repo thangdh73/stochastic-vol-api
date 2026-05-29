@@ -7,6 +7,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..auth.deps import require_auth
 from ..db.database import get_db
 from ..schemas.persistence import (
     InputSetResponse,
@@ -25,7 +26,7 @@ from ..services.persistence import get_input_set, get_prospect, get_simulation_r
 from ..services.persistence import list_input_sets, list_prospects, list_simulation_runs
 from ..services.persistence import save_input_set, update_prospect as update_prospect_svc
 
-router = APIRouter(prefix="/api/prospects", tags=["prospects"])
+router = APIRouter(prefix="/api/prospects", tags=["prospects"], dependencies=[Depends(require_auth)])
 
 
 def _not_found(exc: NotFoundError) -> HTTPException:
