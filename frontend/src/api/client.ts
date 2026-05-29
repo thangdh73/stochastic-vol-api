@@ -1,5 +1,6 @@
-import { prepareInputForApi } from '../utils/prepareInputForApi'
 import type {
+  DistributionPreviewResponse,
+  DistributionSpec,
   HealthResponse,
   InputSet,
   ModulePreviewResponse,
@@ -11,6 +12,9 @@ import type {
   SimulationInput,
   ValidationReport,
 } from '../types/api'
+import { prepareTankForApi } from '../utils/ensureSimulationReady'
+import { sanitizeInputForSave } from '../utils/sanitizeInputForSave'
+import { apiUrl } from './baseUrl'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -22,7 +26,7 @@ function prepareContextForApi(
     ? Object.fromEntries(
         Object.entries(context.tank_inputs).map(([key, tank]) => [
           key,
-          prepareInputForApi(tank),
+          prepareTankForApi(tank),
         ]),
       )
     : undefined
@@ -30,7 +34,7 @@ function prepareContextForApi(
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init)
+  const res = await fetch(apiUrl(path), init)
   if (!res.ok) {
     let detail: unknown = res.statusText
     try {
@@ -52,7 +56,7 @@ export const api = {
   getPm3xdCase: () => request<SimulationInput>('/api/validation-cases/pm3xd'),
 
   validate: (input: SimulationInput) => {
-    const payload = prepareInputForApi(input)
+    const payload = prepareTankForApi(input)
     return request<ValidationReport>('/api/validate', {
       method: 'POST',
       headers: JSON_HEADERS,
@@ -65,7 +69,7 @@ export const api = {
     includeArrays = false,
     context?: GroupDependencyContextPayload,
   ) => {
-    const payload = prepareInputForApi(input)
+    const payload = prepareTankForApi(input)
     return request<SimulateResponse>('/api/simulate', {
       method: 'POST',
       headers: JSON_HEADERS,
@@ -78,13 +82,30 @@ export const api = {
   },
 
   simulateModulePreview: (input: SimulationInput, scope: ModuleScope) => {
-    const payload = prepareInputForApi(input)
+    const payload = prepareTankForApi(input)
     return request<ModulePreviewResponse>('/api/simulate/preview', {
       method: 'POST',
       headers: JSON_HEADERS,
       body: JSON.stringify({ input: payload, scope }),
     })
   },
+
+  simulateDistributionPreview: (
+    distribution: DistributionSpec,
+    nIterations: number,
+    seed: number,
+    variableKind: 'generic' | 'fraction' | 'positive_resource' = 'generic',
+  ) =>
+    request<DistributionPreviewResponse>('/api/simulate/distribution-preview', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        distribution,
+        n_iterations: nIterations,
+        seed,
+        variable_kind: variableKind,
+      }),
+    }),
 
   fetchPerturbationTornado: (
     input: SimulationInput,
@@ -93,7 +114,7 @@ export const api = {
     scopeType: 'prospect' | 'reservoir' | 'segment' | 'tank' = 'prospect',
     scopeId?: string,
   ) => {
-    const payload = prepareInputForApi(input)
+    const payload = prepareTankForApi(input)
     return request<PerturbationTornadoResponse>('/api/simulate/tornado-perturbation', {
       method: 'POST',
       headers: JSON_HEADERS,
@@ -136,12 +157,14 @@ export const api = {
   listInputSets: (prospectId: number) =>
     request<InputSet[]>(`/api/prospects/${prospectId}/input-sets`),
 
-  saveInputSet: (prospectId: number, input: SimulationInput) =>
-    request<InputSet>(`/api/prospects/${prospectId}/input-sets`, {
+  saveInputSet: (prospectId: number, input: SimulationInput) => {
+    const payload = sanitizeInputForSave(input)
+    return request<InputSet>(`/api/prospects/${prospectId}/input-sets`, {
       method: 'POST',
       headers: JSON_HEADERS,
-      body: JSON.stringify(input),
-    }),
+      body: JSON.stringify(payload),
+    })
+  },
 
   /** Latest saved inputs for a prospect (most recent input set). */
   async loadLatestProjectInput(prospectId: number): Promise<SimulationInput> {

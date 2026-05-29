@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from ..schemas.simulation import (
+    DistributionPreviewRequest,
     ExportRequest,
     HealthResponse,
     ModulePreviewRequest,
@@ -19,6 +20,7 @@ from ..services.engine_adapter import (
     SCHEMA_VERSION,
     build_csv_zip,
     build_excel_bytes,
+    distribution_preview,
     get_pm3xd_input_body,
     module_preview,
     perturbation_tornado,
@@ -33,6 +35,7 @@ API_FEATURES = [
     "validate",
     "simulate",
     "simulate_preview",
+    "distribution_preview",
     "tornado_perturbation",
     "export",
 ]
@@ -93,6 +96,26 @@ def run_module_preview_endpoint(request: ModulePreviewRequest) -> dict:
             status_code=422,
             detail={
                 "message": f"Module preview blocked ({request.scope}).",
+                "validation": report_dict,
+            },
+        )
+    return payload
+
+
+@router.post("/simulate/distribution-preview")
+def run_distribution_preview_endpoint(request: DistributionPreviewRequest) -> dict:
+    """Sample one marginal distribution for QC histogram."""
+    payload, report_dict = distribution_preview(
+        request.distribution,
+        request.n_iterations,
+        request.seed,
+        variable_kind=request.variable_kind,
+    )
+    if payload is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Distribution QC preview blocked.",
                 "validation": report_dict,
             },
         )

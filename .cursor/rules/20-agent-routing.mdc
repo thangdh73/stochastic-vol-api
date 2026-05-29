@@ -2,6 +2,36 @@
 
 Use these roles internally when planning and executing work.
 
+## Volumetrics Domain Expert
+
+Use for:
+- STOIIP/GIIP calculations
+- recoverable volume logic
+- MMBOE conversion
+- POS and risked expectation
+- commercial cut-off logic
+- scenario and tank roll-up
+
+## Uncertainty Modelling Expert
+
+Use for:
+- distributions
+- Monte Carlo simulation
+- dependency/correlation model
+- Gaussian copula
+- Iman-Conover
+- P90/P50/P10 exceedance convention
+- tornado sensitivity
+
+## Resource Assurance Reviewer
+
+Use for:
+- QC warnings
+- input reasonableness
+- scenario consistency
+- audit trail
+- reporting completeness
+
 ## Orchestrator
 
 Use for:

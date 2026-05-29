@@ -55,6 +55,7 @@ class DistributionSpec(BaseModel):
     low_clip: Optional[float] = None
     high_clip: Optional[float] = None
     notes: str = ""
+    skew_enabled: bool = False
     solved_alpha: Optional[float] = None
     solved_beta: Optional[float] = None
     solved_mu: Optional[float] = None
@@ -84,7 +85,8 @@ class SimulationInputBody(BaseModel):
     correlation_matrix: Optional[CorrelationMatrixSpec] = None
     complex_trap: Optional[ComplexTrapConfigSpec] = None
     estimating_method: Literal["area_net_pay_yield", "nrv_grv_yield"] = "area_net_pay_yield"
-    nrv_entry_mode: Literal["grv_fill_ntg", "direct"] = "grv_fill_ntg"
+    nrv_entry_mode: Literal["grv_fill_ntg", "direct", "petrel_marginals"] = "grv_fill_ntg"
+    petrel_grv_marginals: Optional[Dict[str, Any]] = None
     cross_check_enabled: bool = False
     grv_ntg_correlation: float = Field(default=0.0, ge=-1.0, le=1.0)
     oil_resource_unit: Literal["MMBO", "MMSTB", "MMscm"] = "MMBO"
@@ -134,6 +136,9 @@ class SimulationInputBody(BaseModel):
     nrv_direct_dist: Optional[DistributionSpec] = None
     nrv_direct_multiplier_dist: Optional[DistributionSpec] = None
     cross_check_area_dist: Optional[DistributionSpec] = None
+    pet_evaluation_dist: Optional[DistributionSpec] = None
+
+    model_config = {"extra": "ignore"}
 
 
 class SimulateOptions(BaseModel):
@@ -182,6 +187,15 @@ class ModulePreviewRequest(BaseModel):
     scope: Literal["area", "net_pay", "hc_yield", "chance", "nrv"]
 
 
+class DistributionPreviewRequest(BaseModel):
+    """Sample one marginal distribution for QC histogram."""
+
+    distribution: DistributionSpec
+    n_iterations: int = Field(default=5000, ge=500, le=50_000)
+    seed: int = 42
+    variable_kind: Literal["generic", "fraction", "positive_resource"] = "generic"
+
+
 class PerturbationTornadoRequest(BaseModel):
     input: SimulationInputBody
     target: str = "total_mmboe"
@@ -204,6 +218,7 @@ class HealthResponse(BaseModel):
             "validate",
             "simulate",
             "simulate_preview",
+            "distribution_preview",
             "tornado_perturbation",
             "export",
         ],

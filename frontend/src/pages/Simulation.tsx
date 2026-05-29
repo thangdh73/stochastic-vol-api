@@ -22,7 +22,9 @@ export function SimulationPage() {
     setLoading,
     setError,
     getGroupDependencyContext,
+    validateProspect,
   } = useWorkflow()
+  const multiTank = segments.length * reservoirs.length > 1
   const [saveName, setSaveName] = useState('')
 
   useEffect(() => {
@@ -39,7 +41,7 @@ export function SimulationPage() {
     setLoading(true)
     setError(null)
     try {
-      const report = await api.validate(input)
+      const report = await validateProspect()
       setValidation(report)
     } catch (e) {
       setError(formatApiError(e, 'QA/QC'))
@@ -48,15 +50,24 @@ export function SimulationPage() {
     }
   }
 
+  useEffect(() => {
+    if (!input || validation) return
+    void runValidate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when opening Simulation
+  }, [input])
+
   const runSimulate = async () => {
     if (!input) return
     setLoading(true)
     setError(null)
     try {
-      const report = await api.validate(input)
+      const report = await validateProspect()
       setValidation(report)
       if (report.has_errors) {
-        setError('Simulation blocked: fix validation errors first.')
+        const nErr = report.issues.filter((i) => i.severity === 'ERROR').length
+        setError(
+          `Simulation blocked: ${nErr} error(s). See Validation preview below — fix each tank listed.`,
+        )
         return
       }
       const result = await api.simulate(input, true, getGroupDependencyContext() ?? undefined)
@@ -126,7 +137,10 @@ export function SimulationPage() {
           </button>
         </div>
         {validation?.has_errors && (
-          <p className="alert warn">Errors block simulation. Review QA/QC tab.</p>
+          <p className="alert warn">
+            Errors block simulation. Scroll to <strong>Validation preview</strong> below — each
+            row shows which tank to fix{multiTank ? ' (multi-tank checks all segments × reservoirs)' : ''}.
+          </p>
         )}
         {input && !validation && (
           <p className="alert info">Run QA/QC before simulation (recommended).</p>

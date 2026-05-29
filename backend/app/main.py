@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="MMRA Web API",
+    title="Stochastic volume calculation API",
     description="Probabilistic subsurface resource and risk evaluation API",
     version="0.1.0",
     lifespan=lifespan,

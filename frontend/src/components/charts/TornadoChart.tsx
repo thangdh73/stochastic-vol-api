@@ -17,6 +17,7 @@ import { computeTornadoDrivers, primaryResourceTargetKey } from '../../utils/sen
 interface TornadoChartProps {
   arrays: SimulationArrays
   groupDriverMap?: Record<string, { group_id: string; group_name: string }>
+  scopeLabel?: string
 }
 
 const TARGET_OPTIONS = [...RESOURCE_ARRAY_KEYS]
@@ -25,7 +26,7 @@ function formatRho(v: number): string {
   return v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2)
 }
 
-export function TornadoChart({ arrays, groupDriverMap }: TornadoChartProps) {
+export function TornadoChart({ arrays, groupDriverMap, scopeLabel }: TornadoChartProps) {
   const defaultTarget = primaryResourceTargetKey(arrays) ?? 'total_mmboe'
   const availableTargets = TARGET_OPTIONS.filter((k) => (arrays[k]?.length ?? 0) > 0)
   const [targetKey, setTargetKey] = useState(
@@ -95,6 +96,11 @@ export function TornadoChart({ arrays, groupDriverMap }: TornadoChartProps) {
 
   return (
     <div className="chart-section tornado-section">
+      {scopeLabel ? (
+        <p className="convention-inline chart-scope-caption">
+          Showing: <strong>{scopeLabel}</strong>
+        </p>
+      ) : null}
       <div className="chart-select-row">
         <label>
           Sensitivity target
@@ -107,25 +113,6 @@ export function TornadoChart({ arrays, groupDriverMap }: TornadoChartProps) {
           </select>
         </label>
       </div>
-      <p className="chart-caption">
-        Tornado proxy: Spearman rank correlation ρ between each sampled input and the
-        selected output (same iteration index). Bar length = |ρ|; sign shows direction.
-        Not a one-at-a-time P10/P90 perturbation tornado.
-      </p>
-      {targetKey === 'stoiip_mmbbl' && (
-        <p className="convention-inline">
-          For <strong>STOIIP</strong>, GRV, fill, N/G, porosity, and saturation usually show{' '}
-          <strong>positive ρ</strong> (they multiply into HCPV). <strong>Oil FVF</strong> is in the
-          denominator (higher FVF → lower STOIIP), so it normally shows <strong>negative ρ</strong>{' '}
-          when FVF is probabilistic — if FVF is fixed, it appears under “No bar (fixed input)” below.
-        </p>
-      )}
-      {targetKey === 'giip_bcf' && (
-        <p className="convention-inline">
-          For <strong>GIIP</strong>, <strong>GEF</strong> is in the denominator (higher GEF → lower
-          GIIP) and typically shows negative ρ when GEF is sampled.
-        </p>
-      )}
       <div className="chart-card tornado-chart-card">
         <h3>Input drivers — {ARRAY_LABELS[targetKey] ?? targetKey}</h3>
         <ResponsiveContainer
@@ -173,17 +160,9 @@ export function TornadoChart({ arrays, groupDriverMap }: TornadoChartProps) {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <p className="convention-inline tornado-legend">
-          <span className="tornado-swatch positive" /> Positive ρ — higher input tends to
-          higher output &nbsp;
-          <span className="tornado-swatch negative" /> Negative ρ — inverse relationship
-        </p>
         {fixedDrivers.length > 0 && (
           <p className="alert info" style={{ marginTop: '0.75rem' }}>
-            <strong>No bar (fixed input):</strong>{' '}
-            {fixedDrivers.map((d) => d.label).join(', ')} — constant across all iterations, so
-            Spearman ρ is undefined. Use a probabilistic distribution on{' '}
-            <strong>NRV / GRV</strong> to see NTG (or fill) in the tornado.
+            <strong>Fixed inputs:</strong> {fixedDrivers.map((d) => d.label).join(', ')}
           </p>
         )}
       </div>

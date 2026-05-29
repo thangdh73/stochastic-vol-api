@@ -1,0 +1,12 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/Dockerfile"
+
+[deploy]
+startCommand = "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
+
+# Set in Railway dashboard:
+# MMRA_DATABASE_URL=sqlite:////data/mmra.db
+# (Mount a volume at /data for persistent saved projects)

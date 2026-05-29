@@ -1,4 +1,4 @@
-# MMRA Web Frontend
+# Stochastic volume calculation — Web Frontend
 
 React + TypeScript + Vite UI for probabilistic resource and risk evaluation.
 

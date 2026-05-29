@@ -37,8 +37,8 @@ function buildBaseFromPm3xd(pm3xd: SimulationInput): SimulationInput {
     basin: 'QA Basin',
     formation: 'QA Formation',
     notes:
-      'Auto-generated QA dummy (3×2 tanks, groups, area method). Safe to delete or overwrite.',
-    estimating_method: 'area_net_pay_yield',
+      'Auto-generated QA dummy (3×2 tanks, groups, GRV/NRV method). Safe to delete or overwrite.',
+    estimating_method: 'nrv_grv_yield',
     n_iterations: 3000,
     seed: 20260528,
     include_chance: true,

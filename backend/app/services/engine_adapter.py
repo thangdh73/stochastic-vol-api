@@ -25,6 +25,7 @@ from mmra_engine.export import (  # noqa: E402
 from mmra_engine.serialization import (  # noqa: E402
     SCHEMA_VERSION,
     compute_input_hash,
+    distribution_from_dict,
     percentile_summary_to_dict,
     simulation_input_from_dict,
     simulation_input_to_dict,
@@ -37,13 +38,20 @@ from mmra_engine.stats import calculate_percentile_summary  # noqa: E402
 from mmra_engine.resource_units import oil_summary_for_display, gas_summary_for_display  # noqa: E402
 from mmra_engine.distributions import sample_distribution, apply_clips, distribution_repr_values  # noqa: E402
 from mmra_engine.perturbation_tornado import (  # noqa: E402
+    _build_base_scalars,
     compute_perturbation_tornado,
     evaluate_volumetrics_scalar,
     perturbation_tornado_to_dict,
 )
+from mmra_engine.petrel_grv import (  # noqa: E402
+    petrel_contact_swing_scalars,
+    petrel_depth_swing_scalars,
+    petrel_marginals_from_dict,
+)
 from mmra_engine.correlation import CorrelationPair  # noqa: E402
 from mmra_engine.validation import (  # noqa: E402
     ValidationReport,
+    validate_distribution_def,
     validate_module_scope,
     validate_simulation_input,
 )
@@ -53,12 +61,15 @@ from mmra_engine.validation_cases import (  # noqa: E402
 )
 
 from ..schemas.simulation import (  # noqa: E402
+    DistributionSpec,
     GroupDependencyContext,
     SimulationInputBody,
 )
 
 _GROUP_PARAM_TO_VAR = {
     "grv": "grv",
+    "petrel_grv_depth": "petrel_grv_depth",
+    "petrel_grv_contact": "petrel_grv_contact",
     "grv_percent_fill": "grv_percent_fill",
     "net_to_gross": "net_to_gross",
     "area": "area",
@@ -291,6 +302,105 @@ def _build_sample_overrides(
         ranks = _rank_map(scores)
         overrides[var] = np.sort(vals)[ranks]
     return overrides
+
+
+_RESOURCE_SUM_KEYS = [
+    "nrv_acft",
+    "hcpv_acft",
+    "stoiip_mmbbl",
+    "recoverable_oil_mmbbl",
+    "solution_gas_bcf",
+    "giip_bcf",
+    "recoverable_gas_bcf",
+    "condensate_mmbbl",
+    "total_mmboe",
+]
+
+_INPUT_AVG_KEYS = (
+    "area",
+    "percent_fill",
+    "net_pay_ft",
+    "geometric_correction",
+    "grv_acft",
+    "grv_percent_fill",
+    "net_to_gross",
+    "porosity",
+    "saturation",
+    "oil_recovery",
+    "fvf",
+    "gor",
+    "solution_gas_recovery",
+    "gas_recovery",
+    "gef",
+    "condensate_yield",
+)
+
+
+def _serialize_scope_arrays(arrays: Dict[str, Any]) -> Dict[str, list]:
+    return {
+        key: np.asarray(arr, dtype=float).tolist()
+        for key, arr in arrays.items()
+        if arr is not None and len(np.asarray(arr, dtype=float)) > 0
+    }
+
+
+def _sum_scope_arrays(
+    tank_results: Dict[str, SimulationResult],
+    tank_keys: list[str],
+    keys: list[str],
+) -> Dict[str, np.ndarray]:
+    out: Dict[str, np.ndarray] = {}
+    for key in keys:
+        vec: Optional[np.ndarray] = None
+        for tk in tank_keys:
+            tr = tank_results.get(tk)
+            if tr is None:
+                continue
+            arr = tr.arrays.get(key)
+            if arr is None:
+                continue
+            a = np.asarray(arr, dtype=float)
+            vec = a if vec is None else vec + a
+        if vec is not None:
+            out[key] = vec
+    return out
+
+
+def _avg_scope_inputs(
+    tank_results: Dict[str, SimulationResult],
+    tank_keys: list[str],
+) -> Dict[str, np.ndarray]:
+    out: Dict[str, np.ndarray] = {}
+    for key in _INPUT_AVG_KEYS:
+        stack: list[np.ndarray] = []
+        for tk in tank_keys:
+            tr = tank_results.get(tk)
+            if tr is None:
+                continue
+            arr = tr.arrays.get(key)
+            if arr is not None:
+                stack.append(np.asarray(arr, dtype=float))
+        if stack:
+            out[key] = np.mean(np.stack(stack, axis=0), axis=0)
+    return out
+
+
+def _scope_arrays_for_tanks(
+    tank_results: Dict[str, SimulationResult],
+    tank_keys: list[str],
+    *,
+    single_tank: bool = False,
+) -> Dict[str, np.ndarray]:
+    if single_tank and len(tank_keys) == 1:
+        tr = tank_results[tank_keys[0]]
+        return {
+            key: np.asarray(arr, dtype=float)
+            for key, arr in tr.arrays.items()
+            if arr is not None and len(np.asarray(arr, dtype=float)) > 0
+        }
+    merged = _sum_scope_arrays(tank_results, tank_keys, _RESOURCE_SUM_KEYS)
+    merged.update(_avg_scope_inputs(tank_results, tank_keys))
+    return merged
 
 
 def _simulate_multi_tank(
@@ -529,18 +639,22 @@ def _simulate_multi_tank(
     tank_breakdown = []
     for tank_key, tr in tank_results.items():
         sid, rid = tank_key.split("::", 1)
-        tank_breakdown.append(
-            {
-                "id": tank_key,
-                "segment_id": sid,
-                "reservoir_id": rid,
-                "label": f"{rid}-{sid}",
-                "summaries": summaries_for_arrays(tr.arrays, first_inp),
-            }
-        )
+        scope_arrays = _scope_arrays_for_tanks(tank_results, [tank_key], single_tank=True)
+        row: Dict[str, Any] = {
+            "id": tank_key,
+            "segment_id": sid,
+            "reservoir_id": rid,
+            "label": f"{rid}-{sid}",
+            "summaries": summaries_for_arrays(tr.arrays, first_inp),
+        }
+        if include_arrays:
+            row["arrays"] = _serialize_scope_arrays(scope_arrays)
+        tank_breakdown.append(row)
 
     reservoir_arrays: Dict[str, Dict[str, Any]] = {}
     segment_arrays: Dict[str, Dict[str, Any]] = {}
+    reservoir_tank_keys: Dict[str, list[str]] = {}
+    segment_tank_keys: Dict[str, list[str]] = {}
     keys = [
         "stoiip_mmbbl",
         "recoverable_oil_mmbbl",
@@ -552,6 +666,8 @@ def _simulate_multi_tank(
     ]
     for tank_key, tr in tank_results.items():
         sid, rid = tank_key.split("::", 1)
+        reservoir_tank_keys.setdefault(rid, []).append(tank_key)
+        segment_tank_keys.setdefault(sid, []).append(tank_key)
         reservoir_arrays.setdefault(rid, {})
         segment_arrays.setdefault(sid, {})
         for k in keys:
@@ -568,19 +684,73 @@ def _simulate_multi_tank(
                 if k not in segment_arrays[sid]
                 else segment_arrays[sid][k] + np.asarray(arr, dtype=float)
             )
+
+    reservoir_breakdown = []
+    for rid, arrs in reservoir_arrays.items():
+        scope_arrays = _scope_arrays_for_tanks(tank_results, reservoir_tank_keys.get(rid, []))
+        row = {
+            "id": rid,
+            "reservoir_id": rid,
+            "label": rid,
+            "summaries": summaries_for_arrays(arrs, first_inp),
+        }
+        if include_arrays:
+            row["arrays"] = _serialize_scope_arrays(scope_arrays)
+        reservoir_breakdown.append(row)
+
+    segment_breakdown = []
+    for sid, arrs in segment_arrays.items():
+        scope_arrays = _scope_arrays_for_tanks(tank_results, segment_tank_keys.get(sid, []))
+        row = {
+            "id": sid,
+            "segment_id": sid,
+            "label": sid,
+            "summaries": summaries_for_arrays(arrs, first_inp),
+        }
+        if include_arrays:
+            row["arrays"] = _serialize_scope_arrays(scope_arrays)
+        segment_breakdown.append(row)
+
+    prospect_scope_arrays = _scope_arrays_for_tanks(tank_results, list(tank_results.keys()))
+    prospect_row: Dict[str, Any] = {
+        "id": "prospect",
+        "label": first_inp.prospect_name,
+        "summaries": summaries_for_arrays(agg_arrays, first_inp),
+    }
+    if include_arrays:
+        prospect_row["arrays"] = _serialize_scope_arrays(prospect_scope_arrays)
+
     response["breakdown"] = {
-        "prospect": {"id": "prospect", "label": first_inp.prospect_name, "summaries": summaries_for_arrays(agg_arrays, first_inp)},
-        "reservoirs": [
-            {"id": rid, "label": rid, "summaries": summaries_for_arrays(arrs, first_inp)}
-            for rid, arrs in reservoir_arrays.items()
-        ],
-        "segments": [
-            {"id": sid, "label": sid, "summaries": summaries_for_arrays(arrs, first_inp)}
-            for sid, arrs in segment_arrays.items()
-        ],
+        "prospect": prospect_row,
+        "reservoirs": reservoir_breakdown,
+        "segments": segment_breakdown,
         "tanks": tank_breakdown,
     }
     return first_inp, first_report, agg_result, response
+
+
+def _resolve_petrel_pm(inp: SimulationInput):
+    raw = getattr(inp, "petrel_grv_marginals", None)
+    if raw is None:
+        return None
+    if hasattr(raw, "depth_grv"):
+        return raw
+    if isinstance(raw, dict):
+        return petrel_marginals_from_dict(raw)
+    return None
+
+
+def _petrel_grv_swings(inp: SimulationInput, var: str) -> Optional[tuple[float, float, float]]:
+    if getattr(inp, "nrv_entry_mode", None) != "petrel_marginals":
+        return None
+    pm = _resolve_petrel_pm(inp)
+    if pm is None:
+        return None
+    if var == "petrel_grv_depth":
+        return petrel_depth_swing_scalars(pm)
+    if var == "petrel_grv_contact":
+        return petrel_contact_swing_scalars(pm)
+    return None
 
 
 def _group_membership_map(
@@ -666,15 +836,42 @@ def _multi_tank_group_tornado(
         has_any = False
         for tank_key, inp in tank_inputs.items():
             sid, rid = tank_key.split("::", 1)
+            in_group = (sid, rid) in members
+            if in_group and var in ("petrel_grv_depth", "petrel_grv_contact"):
+                swings = _petrel_grv_swings(inp, var)
+                if swings is not None:
+                    p90_grv, _, p10_grv = swings
+                    base_scalars = _build_base_scalars(inp)
+                    low_scalars = dict(base_scalars)
+                    low_scalars["grv"] = p90_grv
+                    high_scalars = dict(base_scalars)
+                    high_scalars["grv"] = p10_grv
+                    low_total += float(
+                        evaluate_volumetrics_scalar(inp, low_scalars).get(target, 0.0)
+                    )
+                    high_total += float(
+                        evaluate_volumetrics_scalar(inp, high_scalars).get(target, 0.0)
+                    )
+                    has_any = True
+                    continue
             dist_attr = _VAR_TO_DIST_ATTR.get(var)
             dist = getattr(inp, dist_attr, None) if dist_attr else None
-            if (sid, rid) in members and dist is not None:
+            if in_group and dist is not None:
                 rv = distribution_repr_values(dist)
-                low_total += float(evaluate_volumetrics_scalar(inp, {var: rv["p90"]}).get(target, 0.0))
-                high_total += float(evaluate_volumetrics_scalar(inp, {var: rv["p10"]}).get(target, 0.0))
+                base_scalars = _build_base_scalars(inp)
+                low_scalars = dict(base_scalars)
+                low_scalars[var] = rv["p90"]
+                high_scalars = dict(base_scalars)
+                high_scalars[var] = rv["p10"]
+                low_total += float(
+                    evaluate_volumetrics_scalar(inp, low_scalars).get(target, 0.0)
+                )
+                high_total += float(
+                    evaluate_volumetrics_scalar(inp, high_scalars).get(target, 0.0)
+                )
                 has_any = True
             else:
-                base_tank = float(evaluate_volumetrics_scalar(inp, {}).get(target, 0.0))
+                base_tank = float(evaluate_volumetrics_scalar(inp, _build_base_scalars(inp)).get(target, 0.0))
                 low_total += base_tank
                 high_total += base_tank
         drivers.append(
@@ -762,6 +959,86 @@ def module_preview(
         "validation": report_dict,
     }
     return inp, report, payload, report_dict
+
+
+def distribution_preview(
+    dist_spec: DistributionSpec,
+    n_iterations: int,
+    seed: int,
+    variable_kind: str = "generic",
+) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Sample a single marginal distribution for QC histogram popup.
+
+    Returns (payload_or_none, validation_dict).
+    """
+    dist = distribution_from_dict(dist_spec.model_dump(mode="python"))
+    report = validate_distribution_def(
+        dist,
+        module="distribution_qc",
+        field_prefix=dist.variable_id,
+        variable_kind=variable_kind,
+    )
+    report_dict = validation_report_to_dict(report)
+    report_dict["has_errors"] = report.has_errors
+    report_dict["can_run_simulation"] = report.can_run_simulation
+    report_dict["input_hash"] = ""
+    if report.has_errors:
+        return None, report_dict
+
+    n = int(n_iterations)
+    rng = np.random.default_rng(int(seed))
+    try:
+        samples = sample_distribution(dist, n, rng)
+        samples = apply_clips(samples, dist.low_clip, dist.high_clip)
+    except ValueError as exc:
+        report_dict.setdefault("issues", []).append(
+            {
+                "code": "DISTRIBUTION_SAMPLE_FAILED",
+                "severity": "error",
+                "module": "distribution_qc",
+                "field": dist.variable_id,
+                "message": str(exc),
+                "recommended_action": "Check distribution type and percentile inputs.",
+            }
+        )
+        report_dict["has_errors"] = True
+        report_dict["can_run_simulation"] = False
+        return None, report_dict
+
+    arr = np.asarray(samples, dtype=float)
+    unit = dist.unit or dist.canonical_unit or ""
+    summary = calculate_percentile_summary(
+        arr,
+        product_name=dist.display_name or dist.variable_id,
+        unit=unit,
+    )
+    input_markers: Dict[str, Optional[float]] = {}
+    try:
+        input_markers = distribution_repr_values(dist)
+    except ValueError:
+        input_markers = {
+            "p90": dist.p90,
+            "p50": dist.p50,
+            "p10": dist.p10,
+        }
+
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "engine_version": ENGINE_VERSION,
+        "variable_id": dist.variable_id,
+        "display_name": dist.display_name,
+        "distribution_type": dist.distribution_type.value,
+        "skew_enabled": dist.skew_enabled,
+        "unit": unit,
+        "n_iterations": n,
+        "seed": int(seed),
+        "samples": arr.tolist(),
+        "summary": percentile_summary_to_dict(summary),
+        "input_markers": input_markers,
+        "validation": report_dict,
+    }
+    return payload, report_dict
 
 
 def perturbation_tornado(

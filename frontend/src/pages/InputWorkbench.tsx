@@ -1,59 +1,100 @@
-import { Link } from 'react-router-dom'
-import { InputScopeBadge } from '../components/InputScopeBadge'
-import { TankSelectorStrip } from '../components/TankSelectorStrip'
-import { ValidateBar } from '../components/ValidateBar'
-import { WorkflowGate } from '../components/WorkflowGate'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
+import { InputActiveTankBar } from '../components/InputActiveTankBar'
+import { InputRockVolumeTable } from '../components/InputRockVolumeTable'
+import { RockVolumeEditor, RockVolumeEditorCollapsed } from '../components/RockVolumeEditor'
+import { HcYieldEditor } from '../components/HcYieldEditor'
+import { TankRockVolumeCopyPanel } from '../components/TankRockVolumeCopyPanel'
 import { useWorkflow } from '../context/WorkflowContext'
 import { effectiveEstimatingMethod } from '../utils/estimatingMethod'
 
-export function InputWorkbenchPage() {
-  const { input } = useWorkflow()
-  const method = input ? effectiveEstimatingMethod(input) : 'area_net_pay_yield'
+/** Rock volume: all-tanks summary + active-tank editor on one page. */
+export function InputRockVolumePage() {
+  const { input, setInput } = useWorkflow()
+  const [editorOpen, setEditorOpen] = useState(false)
+  const editorRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
+
+  const scrollToEditor = useCallback(() => {
+    requestAnimationFrame(() => {
+      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
+
+  const openEditor = useCallback(() => {
+    setEditorOpen(true)
+    scrollToEditor()
+  }, [scrollToEditor])
+
+  const closeEditor = useCallback(() => {
+    setEditorOpen(false)
+    if (window.location.hash) {
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${window.location.search}`,
+      )
+    }
+  }, [])
+
+  useEffect(() => {
+    if (location.hash === '#active-tank-editor') {
+      setEditorOpen(true)
+      scrollToEditor()
+    }
+  }, [location.hash, scrollToEditor])
+
+  const handleEditTank = useCallback(
+    (_segmentId: string, _reservoirId: string) => {
+      openEditor()
+    },
+    [openEditor],
+  )
+
+  const showPetrelHint =
+    input &&
+    effectiveEstimatingMethod(input) === 'nrv_grv_yield' &&
+    input.nrv_entry_mode !== 'petrel_marginals'
 
   return (
-    <div>
-      <h1 className="page-title">Input</h1>
-      <p className="page-desc">
-        Reference-style input workspace. Use the selector below to work per segment and reservoir.
-      </p>
-
-      <WorkflowGate>
-        <div className="card classic-toolbar">
-          <div className="classic-toolbar-row">
-            <strong>Input mode</strong>
-            <span className="badge info">
-              {method === 'nrv_grv_yield' ? 'NRV x HC Yield' : 'Area x Net Pay x HC Yield'}
-            </span>
-            <Link to={method === 'nrv_grv_yield' ? '/nrv' : '/area'}>Open primary editor</Link>
-          </div>
+    <div className="input-tab-panel">
+      <details className="input-details-panel input-copy-details">
+        <summary>Copy rock volume between tanks</summary>
+        <div className="input-details-body">
+          <TankRockVolumeCopyPanel />
         </div>
-
-        <InputScopeBadge />
-        <TankSelectorStrip />
-
-        <div className="classic-grid-2">
-          <div className="card">
-            <h2>GRV / geometric uncertainties</h2>
-            <p className="convention-inline">Depth, pinchout, OWC, area, net pay, GRV and related inputs.</p>
-            <div className="btn-row">
-              <Link to="/area">Area editor</Link>
-              <Link to="/net-pay">Net Pay editor</Link>
-              <Link to="/nrv">NRV / GRV editor</Link>
-            </div>
-          </div>
-
-          <div className="card">
-            <h2>Petrophysical and fluid uncertainties</h2>
-            <p className="convention-inline">Porosity, Sw, Bo/GEF/FVF, recovery, GOR, and chance controls.</p>
-            <div className="btn-row">
-              <Link to="/hc-yield">HC Yield editor</Link>
-              <Link to="/chance">Chance editor</Link>
-            </div>
-          </div>
+      </details>
+      <InputRockVolumeTable onEditTank={handleEditTank} />
+      <InputActiveTankBar />
+      {!editorOpen && showPetrelHint && (
+        <div className="alert info input-rock-hint">
+          Select <strong>Petrel GRV (3+3)</strong> in the active-tank editor (or click{' '}
+          <strong>Edit distributions</strong>) to enter three structural + three contact GRV values.
         </div>
+      )}
+      <div
+        id="active-tank-editor"
+        ref={editorRef}
+        className="input-active-editor-anchor"
+      >
+        {editorOpen ? (
+          <RockVolumeEditor onDone={closeEditor} />
+        ) : (
+          <RockVolumeEditorCollapsed
+            onOpen={openEditor}
+            onPatch={(next) => setInput(next)}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
 
-        <ValidateBar />
-      </WorkflowGate>
+/** HC yield + petrophysics for active tank. */
+export function InputHcYieldPage() {
+  return (
+    <div className="input-tab-panel">
+      <HcYieldEditor />
     </div>
   )
 }

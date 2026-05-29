@@ -22,11 +22,12 @@ export function emptyDistribution(
     p90: null,
     p50: null,
     p10: null,
-    min_bound: null,
-    max_bound: null,
+    min_bound: type === 'beta' ? 0 : null,
+    max_bound: type === 'beta' ? 1 : null,
     low_clip: null,
     high_clip: null,
     notes: '',
+    skew_enabled: type === 'lognormal' || type === 'beta',
   }
 }
 
@@ -188,7 +189,7 @@ export function createDefaultInput(): SimulationInput {
     gas_recovery_dist: emptyDistribution('re_gas', 'Gas Recovery', 'fraction', 'beta'),
     gef_dist: emptyDistribution('gef', 'Gas Expansion Factor', 'scf/reservoir ft³', 'fixed'),
     condensate_yield_dist: null,
-    estimating_method: 'area_net_pay_yield',
+    estimating_method: 'nrv_grv_yield',
     nrv_entry_mode: 'grv_fill_ntg',
     cross_check_enabled: false,
     grv_ntg_correlation: 0,

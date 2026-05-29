@@ -1,6 +1,24 @@
 # Project Context
 
-You are working inside a Cursor software project.
+You are working inside a petroleum stochastic volumetric calculation web application.
+
+The application estimates in-place and recoverable hydrocarbon volumes using deterministic and probabilistic workflows.
+
+The app must support:
+- oil and gas volumetric equations
+- single tank and multi-tank calculations
+- Monte Carlo simulation
+- input distributions
+- uncertainty ranges
+- dependency/correlation modelling
+- P90/P50/P10 reporting using petroleum exceedance convention
+- QC warnings
+- sensitivity/tornado analysis
+- technical report export
+
+The calculation engine is the core of the project. UI, charts, reports, and exports must sit on top of tested backend calculation logic.
+
+Do not treat this as a generic calculator or generic dashboard project.
 
 ## Primary Goal
 

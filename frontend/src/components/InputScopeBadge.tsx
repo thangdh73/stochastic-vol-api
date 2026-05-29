@@ -11,12 +11,10 @@ export function InputScopeBadge() {
   if (!reservoir || !segment) return null
 
   const code = tankCode(reservoirIndex, segmentIndex)
-  const key = `${segment.id}::${reservoir.id}`
 
   return (
     <div className="alert info nrv-scope-sticky">
-      Editing tank <strong>{code}</strong> — {segment.name}, {reservoir.name}{' '}
-      <span className="muted">(key: {key})</span>
+      Editing tank <strong>{code}</strong> — {segment.name}, {reservoir.name}
     </div>
   )
 }

@@ -42,11 +42,22 @@ export function UncertaintyGroupsPanel({ compact = false }: { compact?: boolean 
   const {
     segments,
     reservoirs,
+    getTankInput,
     uncertaintyGroups,
     saveUncertaintyGroup,
     removeUncertaintyGroup,
     loadExampleUncertaintyGroups,
   } = useWorkflow()
+
+  const hasPetrelGrvTanks = useMemo(() => {
+    for (const s of segments) {
+      for (const r of reservoirs) {
+        const t = getTankInput(s.id, r.id)
+        if (t?.nrv_entry_mode === 'petrel_marginals') return true
+      }
+    }
+    return false
+  }, [segments, reservoirs, getTankInput])
 
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [nameTouched, setNameTouched] = useState(false)
@@ -164,12 +175,32 @@ export function UncertaintyGroupsPanel({ compact = false }: { compact?: boolean 
       </div>
 
       {!compact && (
-        <p className="convention-inline">
-          Define <strong>named drivers</strong> for uncertainty and tornado charts (e.g.{' '}
-          <code>Poro_R1_S1,2</code> vs <code>Poro_R1_S3</code> for diagenesis). Each tank can
-          belong to <strong>one group per parameter</strong>. Set correlations between groups on
-          the <Link to="/correlations">Correlations</Link> tab.
-        </p>
+        <>
+          <p className="convention-inline">
+            Define <strong>named drivers</strong> for uncertainty and tornado charts (e.g.{' '}
+            <code>Poro_R1_S1,2</code> vs <code>Poro_R1_S3</code> for diagenesis). Each tank can
+            belong to <strong>one group per parameter</strong>. Set correlations between groups on
+            the <Link to="/dependency/correlations">Correlations</Link> tab.
+          </p>
+          {hasPetrelGrvTanks ? (
+            <p className="convention-inline">
+              <strong>Petrel GRV (3+3):</strong> use{' '}
+              <strong>{UNCERTAINTY_PARAMETER_LABELS.petrel_grv_depth}</strong> and{' '}
+              <strong>{UNCERTAINTY_PARAMETER_LABELS.petrel_grv_contact}</strong> instead of generic{' '}
+              GRV — they match the depth and fluid-contact cases entered on Rock volume.
+            </p>
+          ) : null}
+          <details className="dependency-param-ref" style={{ marginTop: '0.5rem' }}>
+            <summary>Parameter list (all drivers)</summary>
+            <ul className="dependency-param-ref-list">
+              {UNCERTAINTY_PARAMETER_OPTIONS.map((p) => (
+                <li key={p}>
+                  <code>{p}</code> — {UNCERTAINTY_PARAMETER_LABELS[p]}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </>
       )}
 
       {uncertaintyGroups.length === 0 ? (

@@ -23,6 +23,9 @@ import type {
   SimulationInput,
 } from '../../types/api'
 import { useWorkflow } from '../../context/WorkflowContext'
+import type { ChartScopeSelection } from '../../utils/chartScope'
+import { buildChartScopeOptions, defaultChartScopeSelection } from '../../utils/chartScope'
+import { ChartScopeFilter } from './ChartScopeFilter'
 
 const TARGET_OPTIONS = [
   'total_mmboe',
@@ -41,26 +44,38 @@ function formatDelta(v: number, unit: string): string {
 
 interface PerturbationTornadoChartProps {
   input: SimulationInput
+  scopeSelection?: ChartScopeSelection
+  onScopeChange?: (next: ChartScopeSelection) => void
+  showScopeFilter?: boolean
 }
 
-export function PerturbationTornadoChart({ input }: PerturbationTornadoChartProps) {
-  const { getGroupDependencyContext, uncertaintyGroups } = useWorkflow()
+export function PerturbationTornadoChart({
+  input,
+  scopeSelection: scopeSelectionProp,
+  onScopeChange,
+  showScopeFilter = true,
+}: PerturbationTornadoChartProps) {
+  const { getGroupDependencyContext, uncertaintyGroups, segments, reservoirs, simulation } =
+    useWorkflow()
   const [targetKey, setTargetKey] = useState<string>('total_mmboe')
-  const [scopeType, setScopeType] = useState<'prospect' | 'reservoir' | 'segment' | 'tank'>('prospect')
-  const [scopeId, setScopeId] = useState<string>('')
+  const scopeOptions = useMemo(
+    () => buildChartScopeOptions(simulation, segments, reservoirs),
+    [simulation, segments, reservoirs],
+  )
+  const [internalScope, setInternalScope] = useState<ChartScopeSelection>(() =>
+    defaultChartScopeSelection(simulation, segments, reservoirs),
+  )
+  const scopeSelection = scopeSelectionProp ?? internalScope
+  const setScopeSelection = onScopeChange ?? setInternalScope
+  const scopeType = scopeSelection.scopeType
+  const scopeId = scopeSelection.scopeId
+  const scopeLabel =
+    scopeOptions[scopeType].find((o) => o.id === scopeId)?.label ??
+    (scopeType === 'prospect' ? 'Prospect total' : scopeId)
   const [data, setData] = useState<PerturbationTornadoResult | null>(null)
   const [meta, setMeta] = useState<PerturbationTornadoResponse['multi_tank'] | null>(null)
-  const [serverDebug, setServerDebug] = useState<PerturbationTornadoResponse['debug_context'] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const ctx = getGroupDependencyContext()
-  const tankKeys = Object.keys(ctx?.tank_inputs ?? {})
-  const reservoirOptions = Array.from(
-    new Set(tankKeys.map((k) => (k.includes('::') ? k.split('::')[1] : k))),
-  )
-  const segmentOptions = Array.from(
-    new Set(tankKeys.map((k) => (k.includes('::') ? k.split('::')[0] : k))),
-  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -83,11 +98,9 @@ export function PerturbationTornadoChart({ input }: PerturbationTornadoChartProp
       )
       setData(res.tornado)
       setMeta(res.multi_tank ?? null)
-      setServerDebug(res.debug_context ?? null)
     } catch (e) {
       setData(null)
       setMeta(null)
-      setServerDebug(null)
       setError(formatApiError(e, 'Perturbation tornado'))
     } finally {
       setLoading(false)
@@ -148,74 +161,26 @@ export function PerturbationTornadoChart({ input }: PerturbationTornadoChartProp
           {loading ? 'Computing…' : 'Refresh'}
         </button>
       </div>
-      {ctx && (
-        <div className="chart-select-row" style={{ marginTop: '0.5rem' }}>
-          <label>
-            Tornado scope
-            <select
-              value={scopeType}
-              onChange={(e) => {
-                const t = e.target.value as typeof scopeType
-                setScopeType(t)
-                setScopeId('')
-              }}
-              disabled={loading}
-            >
-              <option value="prospect">Prospect</option>
-              <option value="reservoir">Reservoir</option>
-              <option value="segment">Segment</option>
-              <option value="tank">Tank</option>
-            </select>
-          </label>
-          {scopeType !== 'prospect' && (
-            <label>
-              {scopeType === 'tank'
-                ? 'Tank'
-                : scopeType === 'reservoir'
-                  ? 'Reservoir'
-                  : 'Segment'}
-              <select value={scopeId} onChange={(e) => setScopeId(e.target.value)} disabled={loading}>
-                <option value="">All in scope</option>
-                {(scopeType === 'tank'
-                  ? tankKeys
-                  : scopeType === 'reservoir'
-                    ? reservoirOptions
-                    : segmentOptions
-                ).map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
+      {showScopeFilter && !scopeSelectionProp && (
+        <ChartScopeFilter
+          selection={scopeSelection}
+          options={scopeOptions}
+          onChange={setScopeSelection}
+          disabled={loading}
+        />
       )}
-
-      <p className="chart-caption">
-        Workbook OAT tornado: base case uses <strong>P50</strong> for all active inputs.
-        Each bar swings one input to <strong>P90</strong> (low) or <strong>P10</strong> (high)
-        while others stay at P50. Input correlations are <em>not</em> applied. P90/P10 labels
-        follow P10-large input convention.
-      </p>
+      {scopeLabel ? (
+        <p className="convention-inline chart-scope-caption">
+          OAT scope: <strong>{scopeLabel}</strong>
+        </p>
+      ) : null}
 
       {error && <div className="alert error">{error}</div>}
 
       {uncertaintyGroups.length > 0 && !meta?.group_oat && !error && (
         <div className="alert warn">
-          Group OAT is not active in this response (showing legacy per-variable drivers). If you
-          expected group names, restart backend and click <strong>Refresh</strong>.
+          Group OAT is not active — restart the service and click <strong>Refresh</strong>.
         </div>
-      )}
-      {uncertaintyGroups.length > 0 && (
-        <p className="convention-inline" style={{ marginTop: '0.5rem' }}>
-          Debug — groups configured: <strong>{uncertaintyGroups.length}</strong>; context tank
-          inputs: <strong>{Object.keys(ctx?.tank_inputs ?? {}).length}</strong>; response group
-          OAT: <strong>{meta?.group_oat ? 'on' : 'off'}</strong>; response multi-tank:{' '}
-          <strong>{meta?.enabled ? 'on' : 'off'}</strong>; server groups:{' '}
-          <strong>{serverDebug?.groups ?? 0}</strong>; server tank inputs:{' '}
-          <strong>{serverDebug?.tank_inputs ?? 0}</strong>.
-        </p>
       )}
 
       {data && (
@@ -272,23 +237,12 @@ export function PerturbationTornadoChart({ input }: PerturbationTornadoChartProp
               <Bar dataKey="deltaHigh" name="P10 swing" stackId="t" fill="#2e6b9e" />
             </BarChart>
           </ResponsiveContainer>
-          <p className="convention-inline tornado-legend">
-            Red = change when driver set to input P90; blue = change when driver set to input
-            P10 (others at P50).
-          </p>
         </div>
       )}
 
       {fixed.length > 0 && (
         <p className="alert info" style={{ marginTop: '0.75rem' }}>
-          <strong>No swing (fixed input):</strong>{' '}
-          {fixed.map((d) => d.label).join(', ')}
-        </p>
-      )}
-
-      {data?.method_note && (
-        <p className="convention-inline" style={{ marginTop: '0.5rem' }}>
-          {data.method_note}
+          <strong>Fixed inputs:</strong> {fixed.map((d) => d.label).join(', ')}
         </p>
       )}
     </div>

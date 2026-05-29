@@ -50,6 +50,22 @@ class TestDistributionSerialization(unittest.TestCase):
         self.assertEqual(restored.distribution_type, inp.area_dist.distribution_type)
         self.assertEqual(restored.fixed_value, inp.area_dist.fixed_value)
 
+    def test_skew_enabled_round_trip(self):
+        from mmra_engine.distributions import DistributionDef, DistributionType
+
+        dist = DistributionDef(
+            variable_id="poro",
+            display_name="Porosity",
+            distribution_type=DistributionType.LOGNORMAL,
+            p90=0.12,
+            p50=0.18,
+            p10=0.24,
+            skew_enabled=True,
+        )
+        restored = distribution_from_dict(distribution_to_dict(dist))
+        self.assertTrue(restored.skew_enabled)
+        self.assertEqual(restored.p50, dist.p50)
+
 
 class TestOilGasInputRoundTrip(unittest.TestCase):
     def test_oil_formula_simulation_identity(self):

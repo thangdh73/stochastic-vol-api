@@ -68,6 +68,24 @@ class TestPM3XDCase(unittest.TestCase):
         self.assertIn("productive_area", data["arrays"])
         self.assertEqual(len(data["arrays"]["productive_area"]), body["n_iterations"])
 
+    def test_distribution_preview_porosity(self):
+        body = get_pm3xd_input_body()
+        dist = body["porosity_dist"]
+        r = client.post(
+            "/api/simulate/distribution-preview",
+            json={
+                "distribution": dist,
+                "n_iterations": 2000,
+                "seed": body.get("seed", 42),
+                "variable_kind": "fraction",
+            },
+        )
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(len(data["samples"]), 2000)
+        self.assertIn("summary", data)
+        self.assertIn("p50", data["summary"])
+
     def test_module_preview_nrv(self):
         body = get_pm3xd_input_body()
         body["estimating_method"] = "nrv_grv_yield"

@@ -121,7 +121,7 @@ export function CorrelationsPage() {
         Set <strong>prospect-level dependencies</strong> between named uncertainty groups (e.g.{' '}
         <code>Poro_R1_S1,2</code> ↔ <code>Sw_R1_S1,2</code>), then optional{' '}
         <strong>per-tank</strong> matrices for parameters not covered by groups. Define groups in{' '}
-        <Link to="/setup">Prospect Setup → Dependency groups</Link>.
+        <Link to="/dependency/groups">Dependency → Groups</Link>.
       </p>
       {input && effectiveEstimatingMethod(input) === 'nrv_grv_yield' && (
         <div className="alert info">

@@ -137,7 +137,8 @@ class SimulationInput:
     estimating_method: str = "area_net_pay_yield"  # area_net_pay_yield | nrv_grv_yield
 
     # NRV route: GRV × % fill × net/gross (acre-ft throughout)
-    nrv_entry_mode: str = "grv_fill_ntg"  # grv_fill_ntg | direct
+    nrv_entry_mode: str = "grv_fill_ntg"  # grv_fill_ntg | direct | petrel_marginals
+    petrel_grv_marginals: Optional[Any] = None  # PetrelGrvMarginals or dict
     grv_dist: Optional[DistributionDef] = None
     grv_percent_fill_dist: Optional[DistributionDef] = None
     net_to_gross_dist: Optional[DistributionDef] = None
@@ -147,6 +148,7 @@ class SimulationInput:
     # Optional area–NP cross-check when using NRV method
     cross_check_enabled: bool = False
     cross_check_area_dist: Optional[DistributionDef] = None
+    pet_evaluation_dist: Optional[DistributionDef] = None
     grv_ntg_correlation: float = 0.0
 
     # Workbook-style resource display units (canonical calc unchanged)
@@ -329,6 +331,21 @@ def _draw_independent_samples(
     elif getattr(inp, "nrv_entry_mode", "grv_fill_ntg") == "direct":
         samples["nrv_direct"] = (
             _sample(inp.nrv_direct_dist, n, rng) * sample_nrv_direct_multiplier(inp, n, rng)
+        )
+    elif getattr(inp, "nrv_entry_mode", "grv_fill_ntg") == "petrel_marginals":
+        from .petrel_grv import petrel_marginals_from_dict, sample_petrel_grv
+
+        raw = getattr(inp, "petrel_grv_marginals", None)
+        pm = raw if hasattr(raw, "depth_grv") else petrel_marginals_from_dict(raw)
+        if pm is None:
+            raise ValueError("petrel_grv_marginals is required when nrv_entry_mode='petrel_marginals'.")
+        grv, d_idx, c_idx, _ = sample_petrel_grv(pm, n, rng)
+        samples["grv"] = grv
+        samples["petrel_depth_case"] = d_idx.astype(float)
+        samples["petrel_contact_case"] = c_idx.astype(float)
+        samples["grv_percent_fill"] = np.ones(n, dtype=float)
+        samples["net_to_gross"] = _sample(
+            inp.net_to_gross_dist, n, rng, default_value=1.0
         )
     else:
         samples["grv"] = _sample(inp.grv_dist, n, rng)

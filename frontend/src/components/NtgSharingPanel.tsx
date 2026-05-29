@@ -49,8 +49,9 @@ export function NtgSharingPanel() {
       </ul>
       {(resLinked || segLinked) && (
         <p className="alert info" style={{ marginBottom: 0 }}>
-          Active tank is linked with: <strong>{linkedCodes.join(', ')}</strong>. Edit NTG below —
-          linked tanks update automatically. GRV is not linked.
+          Active tank is linked with: <strong>{linkedCodes.join(', ')}</strong>.{' '}
+          Edit NTG in the <strong>NTG</strong> table above — linked tanks update
+          automatically. GRV is not linked.
         </p>
       )}
       {!resLinked && !segLinked && activeReservoir && (

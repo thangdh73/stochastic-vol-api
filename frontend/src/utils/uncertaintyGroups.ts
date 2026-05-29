@@ -8,6 +8,8 @@ import { tankId } from './tankLabels'
 
 export const UNCERTAINTY_PARAMETER_LABELS: Record<UncertaintyParameterId, string> = {
   grv: 'GRV',
+  petrel_grv_depth: 'Depth / structure (Petrel)',
+  petrel_grv_contact: 'Fluid contact (Petrel)',
   grv_percent_fill: '% trap fill',
   net_to_gross: 'Net/Gross',
   area: 'Closed area',
@@ -28,6 +30,8 @@ export const UNCERTAINTY_PARAMETER_LABELS: Record<UncertaintyParameterId, string
 
 export const UNCERTAINTY_PARAMETER_OPTIONS: UncertaintyParameterId[] = [
   'grv',
+  'petrel_grv_depth',
+  'petrel_grv_contact',
   'grv_percent_fill',
   'net_to_gross',
   'nrv_direct',
@@ -219,6 +223,8 @@ export function suggestGroupName(
 ): string {
   const paramShort: Record<UncertaintyParameterId, string> = {
     grv: 'GRV',
+    petrel_grv_depth: 'Struct',
+    petrel_grv_contact: 'Contact',
     grv_percent_fill: 'Fill',
     net_to_gross: 'NTG',
     area: 'Area',

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { apiUrl } from '../api/baseUrl'
 import { useWorkflow } from '../context/WorkflowContext'
 
 export function ExportPage() {
@@ -10,9 +11,8 @@ export function ExportPage() {
     if (!input) return
     setBusy(true)
     try {
-      const path =
-        format === 'csv' ? '/api/export/csv' : '/api/export/excel'
-      const res = await fetch(path, {
+      const path = format === 'csv' ? '/api/export/csv' : '/api/export/excel'
+      const res = await fetch(apiUrl(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, include_workbook_targets: false }),

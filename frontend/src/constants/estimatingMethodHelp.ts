@@ -27,10 +27,14 @@ export const ESTIMATING_METHOD_HELP: EstimatingMethodHelpSlide[] = [
     short:
       'Multiply Net Rock Volume × HC Yield distributions. Often used when NRV or GRV is available from a workstation interpretation.',
     explain:
-      'Net rock volume is built from gross rock volume (GRV, acre-ft), percent trap fill, and net-to-gross, ' +
-      'or entered directly as an NRV distribution. The same HC yield chain (porosity, saturation, recovery) ' +
-      'is applied as in the Area × Net Pay method. Optional area–net pay cross-check compares implied net pay ' +
-      'from NRV ÷ productive area against geologic expectations.',
+      'Rock volume has two modes. (1) Decomposed: gross rock volume (GRV) × percent trap fill × net-to-gross ' +
+      '(NTG), each with its own uncertainty — combined automatically each Monte Carlo iteration into net rock ' +
+      'volume (NRV). Use Petrel GRV (3+3) when Petrel gives three structural GRVs and three contact GRVs; ' +
+      'the app builds a depth×contact matrix and tornado shows separate Depth and Fluid contact bars. ' +
+      'Alternatively use GRV × fill × NTG with manual distributions on Input → Rock volume. ' +
+      '(2) Direct NRV: check NTG constant on Setup when NRV (acre-ft) is already calculated outside the app ' +
+      '(e.g. workstation GRV × fill × NTG); enter one NRV distribution only. HC yield (porosity, saturation, ' +
+      'recovery, FVF/GEF) is applied to NRV the same way in both modes.',
     diagramSrc: '/help/estimating-method-nrv-grv.png',
   },
 ]

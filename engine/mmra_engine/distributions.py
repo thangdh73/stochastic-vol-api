@@ -37,6 +37,7 @@ class DistributionType(str, Enum):
     LOGNORMAL = "lognormal"
     TRIANGULAR = "triangular"
     BETA = "beta"
+    PERT = "pert"
 
 
 @dataclass
@@ -78,6 +79,9 @@ class DistributionDef:
 
     notes: str = ""
 
+    # When True, P50 participates in fitting (3-point skew) for normal / lognormal / beta.
+    skew_enabled: bool = False
+
     # Solved parameters (filled in by fitting routines)
     solved_alpha: Optional[float] = field(default=None, repr=False)
     solved_beta: Optional[float] = field(default=None, repr=False)
@@ -104,6 +108,47 @@ def _beta_fit_objective(params: np.ndarray, y10: float, y90: float) -> np.ndarra
     r1 = stats.beta.cdf(y10, alpha, beta_) - 0.10
     r2 = stats.beta.cdf(y90, alpha, beta_) - 0.90
     return np.array([r1, r2])
+
+
+def _pert_resolve_bounds(dist: DistributionDef) -> tuple[float, float, float]:
+    """Resolve PERT min / mode / max from explicit fields or P90 / P50 / P10."""
+    lo = dist.tri_min
+    mode = dist.tri_mode
+    hi = dist.tri_max
+    if lo is None:
+        lo = dist.low_clip if dist.low_clip is not None else dist.p90
+    if mode is None:
+        mode = dist.p50 if dist.p50 is not None else (
+            (dist.p90 + dist.p10) / 2.0
+            if dist.p90 is not None and dist.p10 is not None
+            else None
+        )
+    if hi is None:
+        hi = dist.high_clip if dist.high_clip is not None else dist.p10
+    if lo is None or mode is None or hi is None:
+        raise ValueError(
+            f"PERT distribution '{dist.variable_id}' could not resolve min/mode/max. "
+            "Provide p90, p50, and p10 (or tri_min, tri_mode, tri_max)."
+        )
+    return float(lo), float(mode), float(hi)
+
+
+def _pert_alpha_beta(
+    lo: float,
+    mode: float,
+    hi: float,
+    *,
+    lamb: float = 4.0,
+) -> tuple[float, float]:
+    """Classic PERT beta shape parameters (min, mode, max)."""
+    span = hi - lo
+    if span <= 0:
+        raise ValueError("PERT: max must be greater than min.")
+    if not (lo <= mode <= hi):
+        raise ValueError("PERT: mode must lie between min and max.")
+    alpha = 1.0 + lamb * (mode - lo) / span
+    beta_ = 1.0 + lamb * (hi - mode) / span
+    return alpha, beta_
 
 
 def fit_beta(
@@ -200,28 +245,70 @@ def fit_beta(
 # ---------------------------------------------------------------------------
 
 def _fit_normal(
-    p90_value: float, p10_value: float, p50_value: Optional[float] = None
+    p90_value: float,
+    p10_value: float,
+    p50_value: Optional[float] = None,
+    skew_enabled: bool = False,
 ) -> tuple[float, float]:
     """
     Fit Normal(mu, sigma) from P90 and P10 display values.
 
-    P90 display = CDF q=0.10 (smaller/conservative)
-    P10 display = CDF q=0.90 (larger/upside)
+    When skew_enabled and p50 is set, mu = p50. Otherwise mu is the P90/P10 midpoint.
     """
     sigma = max((p10_value - p90_value) / (2.0 * Z90), 1e-12)
-    if p50_value is not None:
+    if skew_enabled and p50_value is not None:
+        mu = p50_value
+    elif p50_value is not None and not skew_enabled:
+        mu = (p90_value + p10_value) / 2.0
+    elif p50_value is not None:
         mu = p50_value
     else:
         mu = (p90_value + p10_value) / 2.0
     return mu, sigma
 
 
-def _fit_lognormal(p90_value: float, p10_value: float) -> tuple[float, float]:
+def _lognormal_3pt_residual(
+    params: np.ndarray, p90_value: float, p50_value: float, p10_value: float
+) -> np.ndarray:
+    mu = params[0]
+    sigma = max(math.exp(params[1]), 1e-12)
+    z_vals = [stats.norm.ppf(0.1), stats.norm.ppf(0.5), stats.norm.ppf(0.9)]
+    targets = [p90_value, p50_value, p10_value]
+    preds = [math.exp(mu + sigma * z) for z in z_vals]
+    return np.array([(p - t) / max(abs(t), 1e-12) for p, t in zip(preds, targets)])
+
+
+def _fit_lognormal_3pt(p90_value: float, p50_value: float, p10_value: float) -> tuple[float, float]:
+    if p90_value <= 0 or p50_value <= 0 or p10_value <= 0:
+        raise ValueError("Lognormal skew fit requires positive P90, P50, and P10.")
+    if not (p90_value <= p50_value <= p10_value):
+        raise ValueError("Lognormal skew fit requires P90 <= P50 <= P10.")
+    mu0, sigma0 = _fit_lognormal(p90_value, p10_value)
+    x0 = np.array([mu0, math.log(max(sigma0, 1e-12))])
+    result = optimize.least_squares(
+        _lognormal_3pt_residual,
+        x0,
+        args=(p90_value, p50_value, p10_value),
+        method="trf",
+    )
+    if not result.success:
+        raise ValueError("Lognormal 3-point (skew) fit did not converge.")
+    return float(result.x[0]), max(math.exp(float(result.x[1])), 1e-12)
+
+
+def _fit_lognormal(
+    p90_value: float,
+    p10_value: float,
+    p50_value: Optional[float] = None,
+    skew_enabled: bool = False,
+) -> tuple[float, float]:
     """
     Fit Lognormal from P90 and P10 display values.
 
-    Returns (mu_ln, sigma_ln) such that ln(X) ~ Normal(mu_ln, sigma_ln).
+    When skew_enabled with P50, fits all three percentiles (asymmetric / skewed lognormal).
     """
+    if skew_enabled and p50_value is not None:
+        return _fit_lognormal_3pt(p90_value, p50_value, p10_value)
     if p90_value <= 0 or p10_value <= 0:
         raise ValueError("Lognormal P90 and P10 values must be positive.")
     if p10_value < p90_value:
@@ -231,6 +318,48 @@ def _fit_lognormal(p90_value: float, p10_value: float) -> tuple[float, float]:
     sigma_ln = max((ln_p10 - ln_p90) / (2.0 * Z90), 1e-12)
     mu_ln = (ln_p90 + ln_p10) / 2.0
     return mu_ln, sigma_ln
+
+
+def _beta_3pt_residual(
+    params: np.ndarray, y90: float, y50: float, y10: float
+) -> np.ndarray:
+    alpha = math.exp(params[0])
+    beta_ = math.exp(params[1])
+    qs = [0.1, 0.5, 0.9]
+    targets = [y90, y50, y10]
+    preds = [stats.beta.ppf(q, alpha, beta_) for q in qs]
+    return np.array([p - t for p, t in zip(preds, targets)])
+
+
+def fit_beta_3pt(
+    p90_value: float,
+    p50_value: float,
+    p10_value: float,
+    a: float,
+    b: float,
+) -> tuple[float, float]:
+    """Fit Beta(alpha, beta) to P90, P50, and P10 (skew / 3-point)."""
+    if not (a <= p90_value <= b and a <= p50_value <= b and a <= p10_value <= b):
+        raise ValueError("P90, P50, and P10 must lie within [min_bound, max_bound].")
+    if not (p90_value <= p50_value <= p10_value):
+        raise ValueError("Beta skew fit requires P90 <= P50 <= P10.")
+    span = b - a
+    if span <= 0:
+        raise ValueError("Beta bounds must satisfy min_bound < max_bound.")
+    y90 = (p90_value - a) / span
+    y50 = (p50_value - a) / span
+    y10 = (p10_value - a) / span
+    alpha0, beta0 = fit_beta(p90_value, p10_value, a, b)
+    x0 = np.array([math.log(max(alpha0, 1e-6)), math.log(max(beta0, 1e-6))])
+    result = optimize.least_squares(
+        _beta_3pt_residual,
+        x0,
+        args=(y90, y50, y10),
+        method="trf",
+    )
+    if not result.success:
+        raise ValueError("Beta 3-point (skew) fit did not converge.")
+    return math.exp(float(result.x[0])), math.exp(float(result.x[1]))
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +413,7 @@ def sample_distribution(
             raise ValueError(
                 f"Normal distribution '{dist.variable_id}' requires p90 and p10."
             )
-        mu, sigma = _fit_normal(dist.p90, dist.p10, dist.p50)
+        mu, sigma = _fit_normal(dist.p90, dist.p10, dist.p50, dist.skew_enabled)
         dist.solved_mu = mu
         dist.solved_sigma = sigma
         return rng.normal(mu, sigma, size=n)
@@ -294,7 +423,13 @@ def sample_distribution(
             raise ValueError(
                 f"Lognormal distribution '{dist.variable_id}' requires p90 and p10."
             )
-        mu_ln, sigma_ln = _fit_lognormal(dist.p90, dist.p10)
+        if dist.skew_enabled and dist.p50 is None:
+            raise ValueError(
+                f"Lognormal distribution '{dist.variable_id}' has skew_enabled but no p50."
+            )
+        mu_ln, sigma_ln = _fit_lognormal(
+            dist.p90, dist.p10, dist.p50, dist.skew_enabled
+        )
         dist.solved_mu = mu_ln
         dist.solved_sigma = sigma_ln
         return np.exp(rng.normal(mu_ln, sigma_ln, size=n))
@@ -338,12 +473,31 @@ def sample_distribution(
             raise ValueError(
                 f"Beta distribution '{dist.variable_id}' requires p90 and p10."
             )
-        alpha, beta_ = fit_beta(dist.p90, dist.p10, a, b)
+        if dist.skew_enabled:
+            if dist.p50 is None:
+                raise ValueError(
+                    f"Beta distribution '{dist.variable_id}' has skew_enabled but no p50."
+                )
+            alpha, beta_ = fit_beta_3pt(dist.p90, dist.p50, dist.p10, a, b)
+        else:
+            alpha, beta_ = fit_beta(dist.p90, dist.p10, a, b)
         dist.solved_alpha = alpha
         dist.solved_beta = beta_
         # Sample from standard Beta then rescale
         raw = rng.beta(alpha, beta_, size=n)
         return a + raw * (b - a)
+
+    elif dt == DistributionType.PERT:
+        lo, mode, hi = _pert_resolve_bounds(dist)
+        if hi <= lo:
+            raise ValueError(
+                f"PERT distribution '{dist.variable_id}': max must be > min."
+            )
+        alpha, beta_ = _pert_alpha_beta(lo, mode, hi)
+        dist.solved_alpha = alpha
+        dist.solved_beta = beta_
+        raw = rng.beta(alpha, beta_, size=n)
+        return lo + raw * (hi - lo)
 
     else:
         raise ValueError(f"Unknown distribution type: {dt}")
@@ -397,24 +551,8 @@ def distribution_repr_values(dist: DistributionDef) -> Dict[str, float]:
         v = float(dist.fixed_value)
         return {"p50": v, "p90": v, "p10": v}
 
-    if dt == DistributionType.TRIANGULAR:
-        lo = dist.tri_min
-        mode = dist.tri_mode
-        hi = dist.tri_max
-        if lo is None:
-            lo = dist.low_clip if dist.low_clip is not None else dist.p90
-        if mode is None:
-            mode = dist.p50 if dist.p50 is not None else (
-                (dist.p90 + dist.p10) / 2.0
-                if dist.p90 is not None and dist.p10 is not None
-                else None
-            )
-        if hi is None:
-            hi = dist.high_clip if dist.high_clip is not None else dist.p10
-        if lo is None or mode is None or hi is None:
-            raise ValueError(
-                f"Triangular distribution '{dist.variable_id}' could not resolve min/mode/max."
-            )
+    if dt in (DistributionType.TRIANGULAR, DistributionType.PERT):
+        lo, mode, hi = _pert_resolve_bounds(dist)
         return {"p50": float(mode), "p90": float(lo), "p10": float(hi)}
 
     if dt == DistributionType.UNIFORM:
@@ -431,18 +569,26 @@ def distribution_repr_values(dist: DistributionDef) -> Dict[str, float]:
         )
     p90 = float(dist.p90)
     p10 = float(dist.p10)
-    if dist.p50 is not None:
-        p50 = float(dist.p50)
-    elif dt == DistributionType.NORMAL:
-        p50, _ = _fit_normal(p90, p10, None)
+    if dt == DistributionType.NORMAL:
+        p50, _ = _fit_normal(
+            p90, p10, dist.p50 if dist.skew_enabled else None, dist.skew_enabled
+        )
     elif dt == DistributionType.LOGNORMAL:
-        mu_ln, _ = _fit_lognormal(p90, p10)
-        p50 = math.exp(mu_ln)
+        if dist.skew_enabled and dist.p50 is not None:
+            p50 = float(dist.p50)
+        else:
+            mu_ln, _ = _fit_lognormal(p90, p10)
+            p50 = math.exp(mu_ln)
     elif dt == DistributionType.BETA:
         a = dist.min_bound if dist.min_bound is not None else 0.0
         b = dist.max_bound if dist.max_bound is not None else 1.0
-        alpha, beta_ = fit_beta(p90, p10, a, b)
-        p50 = a + (alpha / (alpha + beta_)) * (b - a)
+        if dist.skew_enabled and dist.p50 is not None:
+            p50 = float(dist.p50)
+        else:
+            alpha, beta_ = fit_beta(p90, p10, a, b)
+            p50 = a + (alpha / (alpha + beta_)) * (b - a)
+    elif dist.p50 is not None:
+        p50 = float(dist.p50)
     else:
         p50 = (p90 + p10) / 2.0
 

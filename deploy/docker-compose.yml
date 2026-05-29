@@ -1,0 +1,15 @@
+services:
+  stochastic-vol-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      - stochastic_vol_data:/data
+    environment:
+      MMRA_DATABASE_URL: sqlite:////data/mmra.db
+    restart: unless-stopped
+
+volumes:
+  stochastic_vol_data:

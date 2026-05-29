@@ -1,6 +1,8 @@
 /** Prospect-level uncertainty driver (tornado / MC dependency unit). */
 export type UncertaintyParameterId =
   | 'grv'
+  | 'petrel_grv_depth'
+  | 'petrel_grv_contact'
   | 'grv_percent_fill'
   | 'net_to_gross'
   | 'area'

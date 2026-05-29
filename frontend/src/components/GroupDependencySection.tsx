@@ -25,7 +25,7 @@ export function GroupDependencySection() {
       <div className="ntg-sharing-panel">
         <p className="convention-inline" style={{ margin: 0 }}>
           <strong>Group dependencies:</strong> Define uncertainty groups in{' '}
-          <Link to="/setup">Prospect Setup → Dependency groups</Link> (e.g.{' '}
+          <Link to="/dependency/groups">Dependency → Groups</Link> (e.g.{' '}
           <code>Poro_R1_S1,2</code> vs <code>Poro_R1_S3</code>). The matrix below links those
           groups for Monte Carlo (e.g. Porosity ↔ Sw within a compartment). Until groups exist,
           use per-tank correlations or legacy <strong>Corr↔Seg</strong> flags in Prospect Setup.

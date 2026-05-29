@@ -9,25 +9,14 @@ export function TornadoWorkbenchPage() {
   return (
     <div>
       <h1 className="page-title">Tornado</h1>
-      <p className="page-desc">
-        Workbook-style OAT tornado controls with scope filtering and grouped dependency support.
-      </p>
-
       <WorkflowGate>
-        <div className="card classic-toolbar">
-          <div className="classic-toolbar-row">
-            <strong>Tornado controls</strong>
-            <Link to="/charts">Open full Charts page</Link>
-            <Link to="/simulation">Run simulation</Link>
-          </div>
-        </div>
         {input ? (
           <div className="card">
             <PerturbationTornadoChart input={input} />
           </div>
         ) : (
           <div className="alert info">
-            <Link to="/setup">Set up a project</Link> before opening tornado controls.
+            Set up a project on the <Link to="/setup/overview">Setup</Link> page first.
           </div>
         )}
       </WorkflowGate>

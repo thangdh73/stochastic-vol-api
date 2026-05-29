@@ -413,6 +413,15 @@ def validate_distribution_def(
                 value=p10,
             ))
 
+        if (dt in (DistributionType.LOGNORMAL, DistributionType.BETA, DistributionType.NORMAL)
+                and dist.skew_enabled
+                and (p50 is None or not math.isfinite(p50))):
+            report.add_issue(_err(
+                "SKEW_P50_REQUIRED", module, _f("p50"),
+                f"Distribution '{vid}': skew_enabled requires a valid P50 between P90 and P10.",
+                recommended_action="Set P50 or turn off skew distribution.",
+            ))
+
         # P50 ordering: P90 <= P50 <= P10
         if p50 is not None and math.isfinite(p50):
             if p50 < p90:
@@ -442,8 +451,9 @@ def validate_distribution_def(
                     value=ratio,
                 ))
 
-        # P50 lognormal consistency check (advisory)
+        # P50 lognormal consistency check (advisory) — only when skew is off
         if (dt == DistributionType.LOGNORMAL
+                and not dist.skew_enabled
                 and p50 is not None
                 and math.isfinite(p50)
                 and p90 is not None and p90 > 0
@@ -461,8 +471,8 @@ def validate_distribution_def(
                         f"lognormal fit P50={p50_fit:.4g} by {rel_diff*100:.1f}%. "
                         "The engine uses P90/P10 to parameterise the lognormal; P50 is informational only.",
                         recommended_action=(
-                            "If P50 is more reliable, consider using a normal or triangular distribution "
-                            "that accepts three-point inputs."
+                            "Enable skew distribution to fit P90, P50, and P10 together, "
+                            "or adjust P50 to match the two-point fit."
                         ),
                         value=p50,
                     ))
@@ -591,6 +601,43 @@ def validate_distribution_def(
                 f"[tri_min={lo}, tri_max={hi}].",
                 value=mode,
             ))
+
+    # ------------------------------------------------------------------
+    # PERT distribution (P90 / P50 / P10 → min / mode / max)
+    # ------------------------------------------------------------------
+    elif dt == DistributionType.PERT:
+        from .distributions import _pert_resolve_bounds
+
+        try:
+            lo, mode, hi = _pert_resolve_bounds(dist)
+        except ValueError as exc:
+            report.add_issue(_err(
+                "PERT_MISSING_PERCENTILES", module, _f("p90"),
+                str(exc),
+            ))
+            return report
+
+        if not math.isfinite(lo) or not math.isfinite(mode) or not math.isfinite(hi):
+            report.add_issue(_err(
+                "PERT_INVALID_PERCENTILES", module, _f("p90"),
+                f"PERT distribution '{vid}': p90, p50, and p10 must be finite numbers.",
+            ))
+            return report
+
+        if lo >= hi:
+            report.add_issue(_err(
+                "PERT_MIN_GE_MAX", module, _f("p90"),
+                f"PERT distribution '{vid}': p90={lo} must be less than p10={hi}.",
+                value=lo,
+            ))
+        if not (lo <= mode <= hi):
+            report.add_issue(_err(
+                "PERT_MODE_OUTSIDE_BOUNDS", module, _f("p50"),
+                f"PERT distribution '{vid}': p50={mode} must lie between p90={lo} and p10={hi}.",
+                value=mode,
+            ))
+        report.extend(_check_range(mode, vid, _f("p50"), module,
+                                   variable_kind, limits, is_fixed=False))
 
     return report
 
@@ -1140,6 +1187,56 @@ def validate_simulation_input(sim_input: Any) -> ValidationReport:
                 field_prefix="nrv_direct_multiplier_dist",
                 variable_kind="positive_resource",
             ))
+        elif nrv_mode == "petrel_marginals":
+            from .petrel_grv import petrel_marginals_from_dict, build_grv_matrix_3x3
+
+            raw_pm = getattr(sim_input, "petrel_grv_marginals", None)
+            pm = (
+                raw_pm
+                if raw_pm is not None and hasattr(raw_pm, "depth_grv")
+                else petrel_marginals_from_dict(raw_pm if isinstance(raw_pm, dict) else None)
+            )
+            if pm is None:
+                report.add_issue(_err(
+                    "REQUIRED_PETREL_MARGINALS",
+                    module,
+                    "petrel_grv_marginals",
+                    "petrel_grv_marginals is required for Petrel GRV mode (3 depth + 3 contact GRV values).",
+                    recommended_action="Enter Petrel structural and contact GRV cases on Input → Rock volume.",
+                ))
+            else:
+                try:
+                    build_grv_matrix_3x3(pm)
+                except ValueError as exc:
+                    report.add_issue(_err(
+                        "PETREL_MARGINALS_INVALID",
+                        module,
+                        "petrel_grv_marginals",
+                        str(exc),
+                        recommended_action="Check six GRV values and weights.",
+                    ))
+                d_mid = pm.depth_grv[1]
+                c_mid = pm.contact_grv[1]
+                if abs(d_mid - c_mid) / max(d_mid, c_mid, 1.0) > 0.05:
+                    report.add_issue(_warn(
+                        "PETREL_MID_MISMATCH",
+                        module,
+                        "petrel_grv_marginals",
+                        f"P50 structural GRV ({d_mid}) and P50 contact GRV ({c_mid}) differ by >5%. "
+                        "Petrel mid cases should align at the same base case.",
+                        recommended_action="Reconcile Petrel mid structure and mid contact runs.",
+                    ))
+            ntg = getattr(sim_input, "net_to_gross_dist", None)
+            if ntg is None:
+                report.add_issue(_err(
+                    "REQUIRED_DIST_MISSING", module, "net_to_gross_dist",
+                    "net_to_gross_dist is required for NRV method.",
+                    recommended_action="Set NTG on HC yield or rock volume.",
+                ))
+            else:
+                report.extend(validate_distribution_def(
+                    ntg, module=module, field_prefix="net_to_gross_dist", variable_kind="fraction",
+                ))
         else:
             for attr, vkind in [
                 ("grv_dist", "positive_resource"),
@@ -1615,6 +1712,43 @@ def validate_module_scope(sim_input: Any, scope: str) -> ValidationReport:
                     module=module,
                     field_prefix="nrv_direct_multiplier_dist",
                     variable_kind="positive_resource",
+                ))
+        elif nrv_mode == "petrel_marginals":
+            from .petrel_grv import petrel_marginals_from_dict, build_grv_matrix_3x3
+
+            raw_pm = getattr(sim_input, "petrel_grv_marginals", None)
+            pm = (
+                raw_pm
+                if raw_pm is not None and hasattr(raw_pm, "depth_grv")
+                else petrel_marginals_from_dict(raw_pm if isinstance(raw_pm, dict) else None)
+            )
+            if pm is None:
+                report.add_issue(_err(
+                    "REQUIRED_PETREL_MARGINALS",
+                    module,
+                    "petrel_grv_marginals",
+                    "petrel_grv_marginals is required for Petrel GRV preview.",
+                    recommended_action="Enter Petrel GRV cases on Rock volume.",
+                ))
+            else:
+                try:
+                    build_grv_matrix_3x3(pm)
+                except ValueError as exc:
+                    report.add_issue(_err(
+                        "PETREL_MARGINALS_INVALID",
+                        module,
+                        "petrel_grv_marginals",
+                        str(exc),
+                    ))
+            ntg = getattr(sim_input, "net_to_gross_dist", None)
+            if ntg is None:
+                report.add_issue(_err(
+                    "REQUIRED_DIST_MISSING", module, "net_to_gross_dist",
+                    "net_to_gross_dist is required for NRV preview.",
+                ))
+            else:
+                report.extend(validate_distribution_def(
+                    ntg, module=module, field_prefix="net_to_gross_dist", variable_kind="fraction",
                 ))
         else:
             for attr, vkind in [

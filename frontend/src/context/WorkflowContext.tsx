@@ -5,21 +5,39 @@ import {
   useMemo,
   useState,
   type ReactNode,
+  type SetStateAction,
 } from 'react'
 import { normalizeCalculationToggles } from '../utils/calculationToggles'
 import { ensureCcopRiskInInput } from '../utils/ensureCcopRiskInInput'
 import { createDefaultInput, createDefaultReservoir, createDefaultSegment } from '../utils/defaultInput'
 import { readActiveProject, writeActiveProject } from '../utils/projectSession'
+import { validateAllTanks } from '../utils/validateProspect'
+import { api } from '../api/client'
 import type { TankProjectEnvelope } from '../utils/tankEnvelope'
 import {
   applySharedCorrelationToLinkedTanks,
   mergeSharedCorrelationFields,
 } from '../utils/tankCorrelationShared'
 import { applySharedHcYieldToLinkedTanks, mergeSharedHcYieldFields } from '../utils/tankHcYieldShared'
+import { isHcYieldDistKey } from '../utils/hcYieldControlColumns'
+import { updateDistribution, type DistKey } from '../utils/inputHelpers'
 import { applySharedNtgToLinkedTanks, mergeSharedNtgFields } from '../utils/tankNrvShared'
 import { syncGroupCorrelationMatrix, setGroupMatrixCell } from '../utils/groupCorrelations'
 import { tankId } from '../utils/tankLabels'
+import {
+  listTanksInScope,
+  mergeRockVolumeFromSource,
+  mergeTankDistributionsFromSource,
+  type TankCopyScope,
+} from '../utils/tankCopy'
+import {
+  defaultSetupUiSnapshot,
+  DEFAULT_PET_EVAL_LABEL,
+  type PetroParamKey,
+  type SetupUiSnapshot,
+} from '../utils/setupInputParams'
 import type {
+  DistributionSpec,
   GroupDependencyContextPayload,
   ModulePreviewResponse,
   ModuleScope,
@@ -51,6 +69,13 @@ interface WorkflowState {
   error: string | null
   setInput: (input: SimulationInput | null) => void
   getTankInput: (segmentId: string, reservoirId: string) => SimulationInput | null
+  patchTankInput: (segmentId: string, reservoirId: string, next: SimulationInput) => void
+  patchTankDistribution: (
+    segmentId: string,
+    reservoirId: string,
+    key: DistKey,
+    dist: DistributionSpec,
+  ) => void
   setActiveTank: (segmentId: string, reservoirId: string) => void
   getEnvelopeForSave: () => TankProjectEnvelope | null
   loadFromEnvelope: (envelope: TankProjectEnvelope) => void
@@ -66,6 +91,8 @@ interface WorkflowState {
   toggleReservoirSharedCorrelation: (reservoirId: string) => void
   toggleSegmentSharedCorrelation: (segmentId: string) => void
   copyNrvNtgFromActive: (scope: 'reservoir' | 'all') => void
+  copyActiveTankDistributions: (scope: TankCopyScope) => void
+  copyActiveTankRockVolume: (scope: TankCopyScope) => void
   removeReservoir: (reservoirId: string) => void
   moveReservoir: (reservoirId: string, direction: 'up' | 'down') => void
   setActiveReservoir: (reservoirId: string) => void
@@ -93,6 +120,22 @@ interface WorkflowState {
   removeUncertaintyGroup: (groupId: string) => void
   loadExampleUncertaintyGroups: () => void
   getGroupDependencyContext: () => GroupDependencyContextPayload | null
+  validateProspect: () => Promise<ValidationReport>
+  grvParamLabels: string[]
+  setGrvParamLabels: (labels: string[]) => void
+  renameGrvParamLabel: (index: number, label: string) => void
+  addGrvParamLabel: () => void
+  removeGrvParamLabel: (index: number) => void
+  petroParamLabels: Record<PetroParamKey, string>
+  setPetroParamLabel: (key: PetroParamKey, label: string) => void
+  petroConstants: Record<PetroParamKey, boolean>
+  setPetroConstants: (updater: SetStateAction<Record<PetroParamKey, boolean>>) => void
+  petroConstantValues: Record<PetroParamKey, number | null>
+  setPetroConstantValues: (updater: SetStateAction<Record<PetroParamKey, number | null>>) => void
+  petEvaluationEnabled: boolean
+  setPetEvaluationEnabled: (enabled: boolean) => void
+  petEvalLabel: string
+  setPetEvalLabel: (label: string) => void
 }
 
 const WorkflowContext = createContext<WorkflowState | null>(null)
@@ -127,6 +170,89 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     useState<GroupCorrelationMatrix | null>(null)
   const [groupCorrelationMode, setGroupCorrelationModeState] =
     useState<GroupCorrelationMode>('independent')
+  const [setupUi, setSetupUi] = useState<SetupUiSnapshot>(defaultSetupUiSnapshot)
+
+  const applySetupUi = useCallback((snapshot: SetupUiSnapshot | undefined) => {
+    setSetupUi(snapshot ? { ...defaultSetupUiSnapshot(), ...snapshot } : defaultSetupUiSnapshot())
+  }, [])
+
+  const grvParamLabels = setupUi.grv_param_labels
+  const petroParamLabels = setupUi.petro_param_labels
+  const petroConstants = setupUi.petro_constants
+  const petroConstantValues = setupUi.petro_constant_values
+  const petEvaluationEnabled = setupUi.pet_evaluation_enabled !== false
+  const petEvalLabel = setupUi.pet_eval_label?.trim() || DEFAULT_PET_EVAL_LABEL
+
+  const setGrvParamLabels = useCallback((labels: string[]) => {
+    setSetupUi((prev) => ({ ...prev, grv_param_labels: labels }))
+  }, [])
+
+  const renameGrvParamLabel = useCallback((index: number, label: string) => {
+    const next = label.trim()
+    if (!next) return
+    setSetupUi((prev) => ({
+      ...prev,
+      grv_param_labels: prev.grv_param_labels.map((p, i) => (i === index ? next : p)),
+    }))
+  }, [])
+
+  const addGrvParamLabel = useCallback(() => {
+    setSetupUi((prev) => ({
+      ...prev,
+      grv_param_labels: [...prev.grv_param_labels, `Parameter${prev.grv_param_labels.length + 1}`],
+    }))
+  }, [])
+
+  const removeGrvParamLabel = useCallback((index: number) => {
+    setSetupUi((prev) => {
+      if (prev.grv_param_labels.length <= 1) return prev
+      return {
+        ...prev,
+        grv_param_labels: prev.grv_param_labels.filter((_, i) => i !== index),
+      }
+    })
+  }, [])
+
+  const setPetroParamLabel = useCallback((key: PetroParamKey, label: string) => {
+    const next = label.trim()
+    if (!next) return
+    setSetupUi((prev) => ({
+      ...prev,
+      petro_param_labels: { ...prev.petro_param_labels, [key]: next },
+    }))
+  }, [])
+
+  const setPetroConstants = useCallback(
+    (updater: SetStateAction<Record<PetroParamKey, boolean>>) => {
+      setSetupUi((prev) => ({
+        ...prev,
+        petro_constants:
+          typeof updater === 'function' ? updater(prev.petro_constants) : updater,
+      }))
+    },
+    [],
+  )
+
+  const setPetroConstantValues = useCallback(
+    (updater: SetStateAction<Record<PetroParamKey, number | null>>) => {
+      setSetupUi((prev) => ({
+        ...prev,
+        petro_constant_values:
+          typeof updater === 'function' ? updater(prev.petro_constant_values) : updater,
+      }))
+    },
+    [],
+  )
+
+  const setPetEvaluationEnabled = useCallback((enabled: boolean) => {
+    setSetupUi((prev) => ({ ...prev, pet_evaluation_enabled: enabled }))
+  }, [])
+
+  const setPetEvalLabel = useCallback((label: string) => {
+    const next = label.trim()
+    if (!next) return
+    setSetupUi((prev) => ({ ...prev, pet_eval_label: next }))
+  }, [])
 
   const resolvedActiveReservoirId = useMemo(() => {
     if (activeReservoirId && reservoirs.some((r) => r.id === activeReservoirId)) {
@@ -243,6 +369,64 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       })
     },
     [resolvedActiveReservoirId, resolvedActiveSegmentId, reservoirs, segments, clearRunState],
+  )
+
+  const patchTankInput = useCallback(
+    (segmentId: string, reservoirId: string, next: SimulationInput) => {
+      const normalized = normalizeInput(next)
+      setTankInputs((prev) => {
+        const withTank = { ...prev, [tankId(segmentId, reservoirId)]: normalized }
+        return applySharedNtgToLinkedTanks(
+          withTank,
+          segments,
+          reservoirs,
+          segmentId,
+          reservoirId,
+          normalized,
+        )
+      })
+      clearRunState()
+    },
+    [segments, reservoirs, clearRunState],
+  )
+
+  const patchTankDistribution = useCallback(
+    (segmentId: string, reservoirId: string, key: DistKey, dist: DistributionSpec) => {
+      setTankInputs((prev) => {
+        const existing = prev[tankId(segmentId, reservoirId)]
+        if (!existing) return prev
+        const next = normalizeInput(updateDistribution(existing, key, dist))
+        let withTank = { ...prev, [tankId(segmentId, reservoirId)]: next }
+        if (key === 'net_to_gross_dist') {
+          withTank = applySharedNtgToLinkedTanks(
+            withTank,
+            segments,
+            reservoirs,
+            segmentId,
+            reservoirId,
+            next,
+          )
+        } else if (isHcYieldDistKey(key)) {
+          withTank = applySharedHcYieldToLinkedTanks(
+            withTank,
+            segments,
+            reservoirs,
+            segmentId,
+            reservoirId,
+            next,
+          )
+        }
+        return withTank
+      })
+      setModulePreviews((prev) => {
+        const next = { ...prev }
+        if (key === 'net_to_gross_dist') delete next.nrv
+        if (isHcYieldDistKey(key)) delete next.hc_yield
+        return next
+      })
+      clearRunState()
+    },
+    [segments, reservoirs, clearRunState],
   )
 
   const addReservoir = useCallback(() => {
@@ -583,6 +767,94 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     ],
   )
 
+  const copyActiveTankDistributions = useCallback(
+    (scope: TankCopyScope) => {
+      const segmentId = resolvedActiveSegmentId
+      const reservoirId = resolvedActiveReservoirId
+      if (!segmentId || !reservoirId) return
+      const sourceKey = tankId(segmentId, reservoirId)
+      const source = tankInputs[sourceKey]
+      if (!source) return
+      const targets = listTanksInScope(scope, segmentId, reservoirId, segments, reservoirs).filter(
+        (t) => t.key !== sourceKey,
+      )
+      if (targets.length === 0) return
+      if (
+        scope === 'all' &&
+        targets.length > 25 &&
+        typeof window !== 'undefined' &&
+        !window.confirm(
+          `Copy all distributions from the active tank to ${targets.length} other tanks? This overwrites their values.`,
+        )
+      ) {
+        return
+      }
+      setTankInputs((prev) => {
+        const next = { ...prev }
+        targets.forEach(({ key }) => {
+          const existing = next[key]
+          if (existing) {
+            next[key] = normalizeInput(mergeTankDistributionsFromSource(existing, source))
+          }
+        })
+        return next
+      })
+      clearRunState()
+    },
+    [
+      resolvedActiveSegmentId,
+      resolvedActiveReservoirId,
+      tankInputs,
+      segments,
+      reservoirs,
+      clearRunState,
+    ],
+  )
+
+  const copyActiveTankRockVolume = useCallback(
+    (scope: TankCopyScope) => {
+      const segmentId = resolvedActiveSegmentId
+      const reservoirId = resolvedActiveReservoirId
+      if (!segmentId || !reservoirId) return
+      const sourceKey = tankId(segmentId, reservoirId)
+      const source = tankInputs[sourceKey]
+      if (!source) return
+      const targets = listTanksInScope(scope, segmentId, reservoirId, segments, reservoirs).filter(
+        (t) => t.key !== sourceKey,
+      )
+      if (targets.length === 0) return
+      if (
+        scope === 'all' &&
+        targets.length > 25 &&
+        typeof window !== 'undefined' &&
+        !window.confirm(
+          `Copy rock volume from the active tank to ${targets.length} other tanks? This overwrites GRV/NRV only.`,
+        )
+      ) {
+        return
+      }
+      setTankInputs((prev) => {
+        const next = { ...prev }
+        targets.forEach(({ key }) => {
+          const existing = next[key]
+          if (existing) {
+            next[key] = normalizeInput(mergeRockVolumeFromSource(existing, source))
+          }
+        })
+        return next
+      })
+      clearRunState()
+    },
+    [
+      resolvedActiveSegmentId,
+      resolvedActiveReservoirId,
+      tankInputs,
+      segments,
+      reservoirs,
+      clearRunState,
+    ],
+  )
+
   const removeReservoir = useCallback(
     (reservoirId: string) => {
       if (reservoirs.length <= 1) return
@@ -731,6 +1003,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       uncertainty_groups: uncertaintyGroups.length ? uncertaintyGroups : undefined,
       group_correlation_matrix: groupCorrelationMatrix,
       group_correlation_mode: groupCorrelationMode,
+      setup_ui: setupUi,
     }
   }, [
     segments,
@@ -741,11 +1014,13 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     uncertaintyGroups,
     groupCorrelationMatrix,
     groupCorrelationMode,
+    setupUi,
   ])
 
   const getGroupDependencyContext = useCallback((): GroupDependencyContextPayload | null => {
     if (!resolvedActiveSegmentId || !resolvedActiveReservoirId) return null
-    if (!uncertaintyGroups.length) return null
+    const multiTank = segments.length * reservoirs.length > 1
+    if (!multiTank && uncertaintyGroups.length === 0) return null
     return {
       active_segment_id: resolvedActiveSegmentId,
       active_reservoir_id: resolvedActiveReservoirId,
@@ -766,6 +1041,31 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     segments,
     reservoirs,
   ])
+
+  const validateProspect = useCallback(async (): Promise<ValidationReport> => {
+    if (!input) {
+      return {
+        schema_version: '1',
+        has_errors: true,
+        can_run_simulation: false,
+        issues: [
+          {
+            code: 'NO_INPUT',
+            severity: 'ERROR',
+            module: 'simulation_input',
+            field: 'input',
+            message: 'No active tank input loaded.',
+          },
+        ],
+        input_hash: '',
+      }
+    }
+    const multiTank = segments.length * reservoirs.length > 1
+    if (multiTank) {
+      return validateAllTanks(tankInputs, segments, reservoirs)
+    }
+    return api.validate(input)
+  }, [input, segments, reservoirs, tankInputs])
 
   const loadFromEnvelope = useCallback((envelope: TankProjectEnvelope) => {
     setSegments(envelope.segments)
@@ -790,7 +1090,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     setUncertaintyGroups(envelope.uncertainty_groups ?? [])
     setGroupCorrelationMatrix(envelope.group_correlation_matrix ?? null)
     setGroupCorrelationModeState(envelope.group_correlation_mode ?? 'independent')
-  }, [])
+    applySetupUi(envelope.setup_ui)
+  }, [applySetupUi])
 
   const applyGroupsToMatrix = useCallback((groups: UncertaintyParameterGroup[]) => {
     setGroupCorrelationMatrix((prev) => syncGroupCorrelationMatrix(prev, groups))
@@ -937,11 +1238,12 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     setUncertaintyGroups([])
     setGroupCorrelationMatrix(null)
     setGroupCorrelationModeState('independent')
+    applySetupUi(undefined)
     clearRunState()
     setActiveProjectId(null)
     setActiveProjectName(null)
     setError(null)
-  }, [clearRunState])
+  }, [applySetupUi, clearRunState])
 
   const value = useMemo(
     () => ({
@@ -959,6 +1261,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       error,
       setInput,
       getTankInput,
+      patchTankInput,
+      patchTankDistribution,
       setActiveTank,
       getEnvelopeForSave,
       loadFromEnvelope,
@@ -974,6 +1278,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       toggleReservoirSharedCorrelation,
       toggleSegmentSharedCorrelation,
       copyNrvNtgFromActive,
+      copyActiveTankDistributions,
+      copyActiveTankRockVolume,
       removeReservoir,
       moveReservoir,
       setActiveReservoir,
@@ -1001,6 +1307,22 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       removeUncertaintyGroup,
       loadExampleUncertaintyGroups,
       getGroupDependencyContext,
+      validateProspect,
+      grvParamLabels,
+      setGrvParamLabels,
+      renameGrvParamLabel,
+      addGrvParamLabel,
+      removeGrvParamLabel,
+      petroParamLabels,
+      setPetroParamLabel,
+      petroConstants,
+      setPetroConstants,
+      petroConstantValues,
+      setPetroConstantValues,
+      petEvaluationEnabled,
+      setPetEvaluationEnabled,
+      petEvalLabel,
+      setPetEvalLabel,
     }),
     [
       reservoirs,
@@ -1017,6 +1339,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       error,
       setInput,
       getTankInput,
+      patchTankInput,
+      patchTankDistribution,
       setActiveTank,
       getEnvelopeForSave,
       loadFromEnvelope,
@@ -1032,6 +1356,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       toggleReservoirSharedCorrelation,
       toggleSegmentSharedCorrelation,
       copyNrvNtgFromActive,
+      copyActiveTankDistributions,
+      copyActiveTankRockVolume,
       removeReservoir,
       moveReservoir,
       setActiveReservoir,
@@ -1055,6 +1381,22 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       removeUncertaintyGroup,
       loadExampleUncertaintyGroups,
       getGroupDependencyContext,
+      validateProspect,
+      grvParamLabels,
+      setGrvParamLabels,
+      renameGrvParamLabel,
+      addGrvParamLabel,
+      removeGrvParamLabel,
+      petroParamLabels,
+      setPetroParamLabel,
+      petroConstants,
+      setPetroConstants,
+      petroConstantValues,
+      setPetroConstantValues,
+      petEvaluationEnabled,
+      setPetEvaluationEnabled,
+      petEvalLabel,
+      setPetEvalLabel,
     ],
   )
 

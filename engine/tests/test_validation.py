@@ -496,6 +496,18 @@ class TestLognormalP50Consistency(unittest.TestCase):
         r = validate_distribution_def(dist)
         self.assertTrue(_has_warning_code(r, "P50_LOGNORMAL_INCONSISTENT"))
 
+    def test_skew_requires_p50(self):
+        dist = _lognormal("x", p90=100.0, p10=1000.0)
+        dist.skew_enabled = True
+        r = validate_distribution_def(dist)
+        self.assertTrue(_has_error_code(r, "SKEW_P50_REQUIRED"))
+
+    def test_skew_suppresses_lognormal_p50_warning(self):
+        dist = _lognormal("x", p90=100.0, p10=1000.0, p50=900.0)
+        dist.skew_enabled = True
+        r = validate_distribution_def(dist)
+        self.assertFalse(_has_warning_code(r, "P50_LOGNORMAL_INCONSISTENT"))
+
 
 # ===========================================================================
 # 9. validate_chance_categories

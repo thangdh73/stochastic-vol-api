@@ -1,0 +1,29 @@
+# Vercel — build Stochastic volume calculation for thang-doan.vercel.app
+# Copy this file to your personal site repo root, or merge rewrites into existing vercel.json
+
+{
+  "buildCommand": "cd stochastic-volume-app/frontend && npm ci && npm run build",
+  "outputDirectory": "stochastic-volume-app/frontend/dist",
+  "installCommand": "echo skip",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/tools/stochastic-volume/api/:path*",
+      "destination": "https://YOUR-API-HOST.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/tools/stochastic-volume/health",
+      "destination": "https://YOUR-API-HOST.up.railway.app/health"
+    },
+    {
+      "source": "/tools/stochastic-volume/:path*",
+      "destination": "/tools/stochastic-volume/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/tools/stochastic-volume/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    }
+  ]
+}

@@ -60,6 +60,8 @@ _DRIVER_LABELS: Dict[str, str] = {
     "net_pay": "Net pay",
     "geometric_correction": "Geometric correction",
     "grv": "GRV",
+    "petrel_grv_depth": "Depth / structure (Petrel)",
+    "petrel_grv_contact": "Fluid contact (Petrel)",
     "grv_percent_fill": "Percent trap fill",
     "net_to_gross": "Net/Gross",
     "nrv_direct": "NRV direct",
@@ -119,6 +121,17 @@ def _nrv_mode(inp: SimulationInput) -> str:
     return getattr(inp, "nrv_entry_mode", "grv_fill_ntg") or "grv_fill_ntg"
 
 
+def _resolve_petrel_pm(inp: SimulationInput):
+    from .petrel_grv import petrel_marginals_from_dict
+
+    raw = getattr(inp, "petrel_grv_marginals", None)
+    if raw is None:
+        return None
+    if hasattr(raw, "depth_grv"):
+        return raw
+    return petrel_marginals_from_dict(raw if isinstance(raw, dict) else None)
+
+
 # HCPV drivers always required for volumetrics but omitted from NRV correlatable lists.
 _VOLUMETRIC_HC_DRIVERS = ("porosity", "saturation")
 
@@ -162,6 +175,8 @@ def _required_scalar_bindings(inp: SimulationInput) -> List[Tuple[str, str]]:
     if method == "nrv_grv_yield":
         if _nrv_mode(inp) == "direct":
             bindings.append(("nrv_direct_dist", "nrv_direct"))
+        elif _nrv_mode(inp) == "petrel_marginals":
+            bindings.append(("net_to_gross_dist", "net_to_gross"))
         else:
             bindings.extend(
                 [
@@ -216,7 +231,14 @@ def _ensure_eval_scalars(
     if method == "area_net_pay_yield":
         out.setdefault("percent_fill", 1.0)
         out.setdefault("geometric_correction", 1.0)
-    elif method == "nrv_grv_yield" and _nrv_mode(inp) != "direct":
+    elif method == "nrv_grv_yield" and _nrv_mode(inp) not in ("direct", "petrel_marginals"):
+        out.setdefault("grv_percent_fill", 1.0)
+    elif method == "nrv_grv_yield" and _nrv_mode(inp) == "petrel_marginals":
+        pm = _resolve_petrel_pm(inp)
+        if pm is not None:
+            from .petrel_grv import petrel_base_grv_scalar
+
+            out.setdefault("grv", petrel_base_grv_scalar(pm))
         out.setdefault("grv_percent_fill", 1.0)
 
     ft = inp.fluid_type.lower()
@@ -343,18 +365,30 @@ def _build_base_scalars(inp: SimulationInput) -> Dict[str, float]:
     """P50 representative values for all active drivers."""
     scalars: Dict[str, float] = {}
     for driver_id in perturbation_driver_ids(inp):
-        dist_attr, scalar_key = _DRIVER_MAP[driver_id]
+        if driver_id in ("petrel_grv_depth", "petrel_grv_contact"):
+            continue
+        dist_attr, scalar_key = _DRIVER_MAP.get(driver_id, (None, driver_id))
+        if dist_attr is None:
+            continue
         dist: Optional[DistributionDef] = getattr(inp, dist_attr, None)
         if dist is None:
             continue
         repr_vals = distribution_repr_values(dist)
         scalars[scalar_key] = repr_vals["p50"]
 
+    if _estimating_method(inp) == "nrv_grv_yield" and _nrv_mode(inp) == "petrel_marginals":
+        pm = _resolve_petrel_pm(inp)
+        if pm is not None:
+            from .petrel_grv import petrel_base_grv_scalar
+
+            scalars["grv"] = petrel_base_grv_scalar(pm)
+            scalars["grv_percent_fill"] = 1.0
+
     method = _estimating_method(inp)
     if method == "area_net_pay_yield":
         scalars.setdefault("percent_fill", 1.0)
         scalars.setdefault("geometric_correction", 1.0)
-    elif method == "nrv_grv_yield" and _nrv_mode(inp) != "direct":
+    elif method == "nrv_grv_yield" and _nrv_mode(inp) not in ("direct", "petrel_marginals"):
         scalars.setdefault("grv_percent_fill", 1.0)
 
     ft = inp.fluid_type.lower()
@@ -391,6 +425,54 @@ def compute_perturbation_tornado(
     drivers_out: List[PerturbationTornadoDriver] = []
 
     for driver_id in perturbation_driver_ids(inp):
+        if driver_id in ("petrel_grv_depth", "petrel_grv_contact"):
+            pm = _resolve_petrel_pm(inp)
+            if pm is None:
+                continue
+            from .petrel_grv import (
+                petrel_contact_swing_scalars,
+                petrel_depth_swing_scalars,
+            )
+
+            if driver_id == "petrel_grv_depth":
+                p90_grv, p50_grv, p10_grv = petrel_depth_swing_scalars(pm)
+            else:
+                p90_grv, p50_grv, p10_grv = petrel_contact_swing_scalars(pm)
+            is_fixed = abs(p90_grv - p10_grv) < 1e-12 * max(1.0, abs(p50_grv))
+            if is_fixed:
+                drivers_out.append(
+                    PerturbationTornadoDriver(
+                        driver_id=driver_id,
+                        label=_DRIVER_LABELS.get(driver_id, driver_id),
+                        delta_low=0.0,
+                        delta_high=0.0,
+                        swing_low=p90_grv,
+                        swing_high=p10_grv,
+                        is_fixed=True,
+                    )
+                )
+                continue
+            low_scalars = dict(base_scalars)
+            low_scalars["grv"] = p90_grv
+            high_scalars = dict(base_scalars)
+            high_scalars["grv"] = p10_grv
+            y_low = evaluate_volumetrics_scalar(inp, low_scalars)[key] * scale
+            y_high = evaluate_volumetrics_scalar(inp, high_scalars)[key] * scale
+            drivers_out.append(
+                PerturbationTornadoDriver(
+                    driver_id=driver_id,
+                    label=_DRIVER_LABELS.get(driver_id, driver_id),
+                    delta_low=y_low - y_base,
+                    delta_high=y_high - y_base,
+                    swing_low=p90_grv,
+                    swing_high=p10_grv,
+                    is_fixed=False,
+                )
+            )
+            continue
+
+        if driver_id not in _DRIVER_MAP:
+            continue
         dist_attr, scalar_key = _DRIVER_MAP[driver_id]
         dist = getattr(inp, dist_attr, None)
         if dist is None:

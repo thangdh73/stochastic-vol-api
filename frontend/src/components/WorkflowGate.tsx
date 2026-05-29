@@ -31,16 +31,12 @@ export function WorkflowGate({ children }: WorkflowGateProps) {
     return (
       <div className="card">
         <h2>No prospect loaded</h2>
-        <p className="convention-inline">
-          Start from the <Link to="/">Dashboard</Link>: click <strong>New prospect</strong>,
-          then <strong>Save project</strong> when you are ready.
-        </p>
         <div className="btn-row">
           <button type="button" className="primary" onClick={startNew}>
             New prospect
           </button>
-          <Link to="/">
-            <button type="button">← Dashboard</button>
+          <Link to="/dashboard">
+            <button type="button">Projects</button>
           </Link>
         </div>
       </div>

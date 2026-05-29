@@ -1,4 +1,12 @@
 import type { DistributionSpec } from '../types/api'
+import {
+  defaultSkewEnabled,
+  distributionSupportsSkew,
+  distributionTypeOptionLabel,
+  patchForDistributionTypeChange,
+  patchPercentileWithSkew,
+  skewHelpText,
+} from '../utils/distributionSkew'
 import { NumericInput } from './NumericInput'
 
 const DIST_TYPES = [
@@ -8,6 +16,7 @@ const DIST_TYPES = [
   'lognormal',
   'triangular',
   'beta',
+  'pert',
 ] as const
 
 interface DistributionInputCardProps {
@@ -37,6 +46,10 @@ export function DistributionInputCard({
   const patch = (partial: Partial<DistributionSpec>) =>
     onChange({ ...dist, ...partial })
 
+  const supportsSkew = distributionSupportsSkew(dist.distribution_type)
+  const skewOn = Boolean(dist.skew_enabled)
+  const p50Required = supportsSkew && skewOn && dist.distribution_type !== 'fixed'
+
   const pctLabel = (label: string) =>
     asPercent ? `${label} (%)` : label
 
@@ -48,9 +61,17 @@ export function DistributionInputCard({
       </div>
 
       <p className="convention-inline">
-        P90 = conservative (smaller) · P10 = upside (larger).
+        Choose <strong>distribution type</strong> first, then enter values below. P90 = conservative
+        (smaller) · P10 = upside (larger).
         {asPercent ? ' Enter fraction-style ranges as percentages here.' : ''}
       </p>
+      {dist.distribution_type === 'fixed' ? (
+        <p className="convention-inline muted">Fixed: enter one value — no P90/P50/P10 spread.</p>
+      ) : (
+        <p className="convention-inline muted">
+          Uncertain: enter P90, P50, and P10 (required for simulation).
+        </p>
+      )}
       {helperText && <p className="convention-inline muted">{helperText}</p>}
 
       <div className="form-grid">
@@ -59,13 +80,8 @@ export function DistributionInputCard({
           <select
             value={dist.distribution_type}
             onChange={(e) => {
-              const nextType = e.target.value
-              const next: Partial<DistributionSpec> = {
-                distribution_type: nextType,
-                fixed_value:
-                  nextType === 'fixed' ? dist.fixed_value ?? 0 : dist.fixed_value,
-              }
-              if (nextType === 'triangular') {
+              const next = patchForDistributionTypeChange(dist, e.target.value)
+              if (e.target.value === 'triangular') {
                 Object.assign(next, triangularFromPercentiles(dist))
               }
               patch(next)
@@ -73,7 +89,7 @@ export function DistributionInputCard({
           >
             {DIST_TYPES.map((t) => (
               <option key={t} value={t}>
-                {t}
+                {distributionTypeOptionLabel(t)}
               </option>
             ))}
           </select>
@@ -87,6 +103,25 @@ export function DistributionInputCard({
             onChange={(e) => patch({ unit: e.target.value, canonical_unit: e.target.value })}
           />
         </label>
+
+        {supportsSkew && dist.distribution_type !== 'fixed' && (
+          <>
+            <label className="span-2 dist-skew-toggle toggle-row">
+              <input
+                type="checkbox"
+                checked={skewOn}
+                onChange={(e) => patch({ skew_enabled: e.target.checked })}
+              />
+              Skew distribution (3-point P90 / P50 / P10 fit)
+            </label>
+            <p className="convention-inline muted span-2 dist-skew-hint">
+              {skewHelpText(dist.distribution_type, skewOn)}
+              {defaultSkewEnabled(dist.distribution_type) && !skewOn && (
+                <> Turn skew on to match original MMRA lognormal/beta behaviour.</>
+              )}
+            </p>
+          </>
+        )}
 
         {dist.distribution_type === 'fixed' && (
           <label>
@@ -106,7 +141,7 @@ export function DistributionInputCard({
               <NumericInput
                 value={dist.p90}
                 onChange={(v) => {
-                  const next = { p90: v }
+                  const next = patchPercentileWithSkew(dist, 'p90', v)
                   if (dist.distribution_type === 'triangular' && dist.tri_min == null) {
                     Object.assign(next, { tri_min: v })
                   }
@@ -117,10 +152,17 @@ export function DistributionInputCard({
             </label>
             <label>
               {pctLabel('P50 (median)')}
+              {p50Required && (
+                <span className="dist-required-mark" title="Required when skew is on">
+                  {' '}
+                  *
+                </span>
+              )}
               <NumericInput
                 value={dist.p50}
+                allowEmpty={!p50Required}
                 onChange={(v) => {
-                  const next = { p50: v }
+                  const next = patchPercentileWithSkew(dist, 'p50', v)
                   if (dist.distribution_type === 'triangular' && dist.tri_mode == null) {
                     Object.assign(next, { tri_mode: v })
                   }
@@ -134,7 +176,7 @@ export function DistributionInputCard({
               <NumericInput
                 value={dist.p10}
                 onChange={(v) => {
-                  const next = { p10: v }
+                  const next = patchPercentileWithSkew(dist, 'p10', v)
                   if (dist.distribution_type === 'triangular' && dist.tri_max == null) {
                     Object.assign(next, { tri_max: v })
                   }

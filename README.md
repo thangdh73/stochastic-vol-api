@@ -1,4 +1,4 @@
-# MMRA Major Update
+# Stochastic volume calculation
 
 This folder is the **active development** project.
 
@@ -50,5 +50,16 @@ Open **http://localhost:5174/** (proxies API to port 8002).
 **Windows quick start:** double-click [`start-dev.bat`](start-dev.bat) to open API + UI in two terminals.
 
 See [`frontend/README.md`](frontend/README.md).
+
+## Deploy on your personal website
+
+Embed under a subpath on your portfolio site:
+
+| Site | Doc |
+|------|-----|
+| **thang-doan.vercel.app** | [`docs/DEPLOY_VERCEL_THANG_DOAN.md`](docs/DEPLOY_VERCEL_THANG_DOAN.md) → `/tools/stochastic-volume/` |
+| nginx / VPS | [`docs/DEPLOY_PERSONAL_SITE.md`](docs/DEPLOY_PERSONAL_SITE.md) |
+
+Quick build: `.\deploy\build-personal-site.ps1` (default path `/tools/stochastic-volume/`)
 
 See `PROJECT_STATUS.md` for milestone progress.

@@ -62,13 +62,18 @@ export function computeModuleStatuses(
 
   const method = effectiveEstimatingMethod(input)
   if (method === 'nrv_grv_yield') {
-    out.nrv =
-      (input.nrv_entry_mode === 'direct' ? distReady(input.nrv_direct_dist) : true) &&
-      (input.nrv_entry_mode === 'direct'
-        ? true
-        : distReady(input.grv_dist) && distReady(input.grv_percent_fill_dist) && distReady(input.net_to_gross_dist))
-        ? 'complete'
-        : 'incomplete'
+    const mode = input.nrv_entry_mode ?? 'grv_fill_ntg'
+    const nrvOk =
+      mode === 'direct'
+        ? distReady(input.nrv_direct_dist)
+        : mode === 'petrel_marginals'
+          ? Boolean(input.petrel_grv_marginals?.depth_grv?.length === 3) &&
+            Boolean(input.petrel_grv_marginals?.contact_grv?.length === 3) &&
+            distReady(input.net_to_gross_dist)
+          : distReady(input.grv_dist) &&
+            distReady(input.grv_percent_fill_dist) &&
+            distReady(input.net_to_gross_dist)
+    out.nrv = nrvOk ? 'complete' : 'incomplete'
     out.area = 'unknown'
     out.net_pay = 'unknown'
   } else {

@@ -8,6 +8,7 @@ import type {
   GroupCorrelationMode,
   UncertaintyParameterGroup,
 } from '../types/uncertaintyGroups'
+import type { SetupUiSnapshot } from './setupInputParams'
 
 export interface TankProjectEnvelope {
   schema_version: '1'
@@ -20,6 +21,8 @@ export interface TankProjectEnvelope {
   uncertainty_groups?: UncertaintyParameterGroup[]
   group_correlation_matrix?: GroupCorrelationMatrix | null
   group_correlation_mode?: GroupCorrelationMode
+  /** Setup ↔ Input parameter labels and constants. */
+  setup_ui?: SetupUiSnapshot
 }
 
 export const TANK_ENVELOPE_META_KEY = 'tank_envelope_v1'

@@ -571,6 +571,53 @@ class TestDistributionSampling(unittest.TestCase):
         s2 = sample_distribution(dist, 1000, np.random.default_rng(99))
         np.testing.assert_array_equal(s1, s2)
 
+    def test_normal_skew_uses_p50_as_mean(self):
+        dist = DistributionDef(
+            variable_id="x", display_name="X",
+            distribution_type=DistributionType.NORMAL,
+            p90=80.0, p10=120.0, p50=110.0,
+            skew_enabled=True,
+        )
+        samples = sample_distribution(dist, 50_000, self._rng())
+        self.assertAlmostEqual(np.mean(samples), 110.0, delta=0.5)
+
+    def test_lognormal_skew_differs_from_two_point_fit(self):
+        """Skew fit balances P90, P50, and P10 — median shifts toward P50 vs 2-point fit."""
+        import math
+
+        dist_skew = DistributionDef(
+            variable_id="x", display_name="X",
+            distribution_type=DistributionType.LOGNORMAL,
+            p90=100.0, p50=400.0, p10=1000.0,
+            skew_enabled=True,
+        )
+        dist_plain = DistributionDef(
+            variable_id="x", display_name="X",
+            distribution_type=DistributionType.LOGNORMAL,
+            p90=100.0, p10=1000.0,
+        )
+        samples_skew = sample_distribution(dist_skew, 50_000, self._rng())
+        samples_plain = sample_distribution(dist_plain, 50_000, self._rng(99))
+        median_skew = float(np.median(samples_skew))
+        median_plain = float(np.median(samples_plain))
+        two_point_median = math.exp((math.log(100) + math.log(1000)) / 2)
+        self.assertGreater(median_skew, median_plain)
+        self.assertGreater(median_skew, two_point_median)
+
+    def test_beta_skew_percentiles_near_targets(self):
+        dist = DistributionDef(
+            variable_id="x", display_name="X",
+            distribution_type=DistributionType.BETA,
+            p90=0.12, p50=0.18, p10=0.28,
+            min_bound=0.01, max_bound=0.40,
+            skew_enabled=True,
+        )
+        samples = sample_distribution(dist, 50_000, self._rng())
+        # P90 (low) = 10th CDF percentile; P10 (high) = 90th CDF percentile
+        self.assertAlmostEqual(float(np.percentile(samples, 10)), 0.12, delta=0.03)
+        self.assertAlmostEqual(float(np.percentile(samples, 50)), 0.18, delta=0.04)
+        self.assertAlmostEqual(float(np.percentile(samples, 90)), 0.28, delta=0.03)
+
     def test_missing_fixed_value_raises(self):
         dist = DistributionDef(
             variable_id="x", display_name="X",

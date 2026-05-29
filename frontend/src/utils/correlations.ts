@@ -24,6 +24,8 @@ export const VARIABLE_LABELS: Record<string, string> = {
   net_pay: 'Net pay',
   geometric_correction: 'Geometric correction',
   grv: 'GRV (acre-ft)',
+  petrel_grv_depth: 'Depth / structure (Petrel)',
+  petrel_grv_contact: 'Fluid contact (Petrel)',
   grv_percent_fill: 'Percent trap fill',
   net_to_gross: 'Net/Gross',
   nrv_direct: 'NRV direct (acre-ft)',
@@ -46,6 +48,7 @@ const AREA_VOLUMETRIC = [
 ] as const
 
 const NRV_VOLUMETRIC_GRV = ['grv', 'grv_percent_fill', 'net_to_gross'] as const
+const NRV_VOLUMETRIC_PETREL = ['petrel_grv_depth', 'petrel_grv_contact', 'net_to_gross'] as const
 const NRV_VOLUMETRIC_DIRECT = ['nrv_direct'] as const
 
 const HC_COMMON = ['porosity', 'saturation'] as const
@@ -81,8 +84,13 @@ function hcVariables(input: SimulationInput): string[] {
 export function correlatableVariables(input: SimulationInput): string[] {
   const method = effectiveEstimatingMethod(input)
   if (method === 'nrv_grv_yield') {
+    const mode = input.nrv_entry_mode ?? 'grv_fill_ntg'
     const vol =
-      input.nrv_entry_mode === 'direct' ? [...NRV_VOLUMETRIC_DIRECT] : [...NRV_VOLUMETRIC_GRV]
+      mode === 'direct'
+        ? [...NRV_VOLUMETRIC_DIRECT]
+        : mode === 'petrel_marginals'
+          ? [...NRV_VOLUMETRIC_PETREL]
+          : [...NRV_VOLUMETRIC_GRV]
     return [...vol, ...hcVariables(input)]
   }
   return [...AREA_VOLUMETRIC, ...hcVariables(input)]

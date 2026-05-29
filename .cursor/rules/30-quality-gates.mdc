@@ -1,5 +1,22 @@
 # Quality Gates and Planning Policy
 
+## Volumetrics Quality Gates
+
+Before completing any volumetric feature, check:
+
+- Does the calculation use the correct oil/gas equation?
+- Are units explicit?
+- Are GRV, NTG, porosity, Sw, FVF and RF validated?
+- Are all fractions between 0 and 1?
+- Are formation volume factors positive?
+- Is P90/P50/P10 calculated using petroleum exceedance convention?
+- Is random seed reproducibility tested?
+- Are disabled toggles truly excluded from calculation?
+- Are dependencies/correlations documented?
+- Are QC warnings shown to the user?
+- Are input assumptions included in the report?
+- Are histogram and expectation curve both available?
+
 ## Strict Planning Policy
 
 For any request that:

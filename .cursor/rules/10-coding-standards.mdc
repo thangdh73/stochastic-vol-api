@@ -1,5 +1,16 @@
 # Coding Standards
 
+## Scientific Calculation Standards
+
+- Keep volumetric equations in pure backend functions.
+- Do not put calculation logic directly in UI components.
+- Every equation must have a unit test.
+- Every unit conversion must have a unit test.
+- Do not silently clip invalid sampled values unless a QC warning is generated.
+- Do not hide default assumptions.
+- Use reproducible random seeds for Monte Carlo runs.
+- Keep raw simulation arrays available for audit/debug mode.
+- Keep percentile conventions explicit.
 ## General
 
 - Use TypeScript where possible.

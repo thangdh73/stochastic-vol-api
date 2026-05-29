@@ -89,6 +89,13 @@ def create_input_set_endpoint(
         return InputSetResponse(**save_input_set(db, prospect_id, body))
     except NotFoundError as exc:
         raise _not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Save failed: {exc}",
+        ) from exc
 
 
 @router.get("/{prospect_id}/input-sets", response_model=List[InputSetResponse])

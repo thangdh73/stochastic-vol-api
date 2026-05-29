@@ -54,6 +54,7 @@ NRV_RECOMMENDED_PAIRS: Tuple[Tuple[str, str], ...] = (
 )
 
 NRV_VOLUMETRIC_GRV = ("grv", "grv_percent_fill", "net_to_gross")
+NRV_VOLUMETRIC_PETREL = ("petrel_grv_depth", "petrel_grv_contact", "net_to_gross")
 NRV_VOLUMETRIC_DIRECT = ("nrv_direct",)
 
 
@@ -140,7 +141,12 @@ def correlatable_variables_for_input(
     method = estimating_method or "area_net_pay_yield"
     if method == "nrv_grv_yield":
         mode = nrv_entry_mode or "grv_fill_ntg"
-        vol = list(NRV_VOLUMETRIC_DIRECT if mode == "direct" else NRV_VOLUMETRIC_GRV)
+        if mode == "direct":
+            vol = list(NRV_VOLUMETRIC_DIRECT)
+        elif mode == "petrel_marginals":
+            vol = list(NRV_VOLUMETRIC_PETREL)
+        else:
+            vol = list(NRV_VOLUMETRIC_GRV)
         hc = _hc_variables_for_fluid(
             fluid_type, gor_present=gor_present, condensate_present=condensate_present
         )

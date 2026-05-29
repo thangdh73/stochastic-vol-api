@@ -15,8 +15,8 @@ export function DependencyWorkbenchPage() {
         <div className="card classic-toolbar">
           <div className="classic-toolbar-row">
             <strong>Dependency controls</strong>
-            <Link to="/group">Open Group tab</Link>
-            <Link to="/correlations">Open detailed matrix</Link>
+            <Link to="/dependency/groups">Open Groups</Link>
+            <Link to="/dependency/correlations">Open detailed matrix</Link>
           </div>
         </div>
         <GroupDependencySection />

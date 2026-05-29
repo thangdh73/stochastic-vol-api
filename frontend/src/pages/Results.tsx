@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { ResultsTable } from '../components/ResultsTable'
 import { useWorkflow } from '../context/WorkflowContext'
 import type { ScopeBreakdownRow } from '../types/api'
+import { tankCode } from '../utils/tankLabels'
 
 function fmt(v: number | undefined): string {
   if (v == null || Number.isNaN(v)) return '—'
@@ -10,14 +11,35 @@ function fmt(v: number | undefined): string {
   return v.toFixed(4)
 }
 
+function tankDisplayLabel(
+  row: ScopeBreakdownRow,
+  segmentNameById: Record<string, string>,
+  reservoirNameById: Record<string, string>,
+  segmentIndexById: Record<string, number>,
+  reservoirIndexById: Record<string, number>,
+): string {
+  const sid = row.segment_id
+  const rid = row.reservoir_id
+  if (!sid || !rid) return row.label || row.id
+  const segName = segmentNameById[sid] ?? sid
+  const resName = reservoirNameById[rid] ?? rid
+  const segIdx = segmentIndexById[sid]
+  const resIdx = reservoirIndexById[rid]
+  const code =
+    Number.isFinite(segIdx) && Number.isFinite(resIdx) ? tankCode(resIdx, segIdx) : null
+  return code ? `${code} — ${resName} – ${segName}` : `${resName} – ${segName}`
+}
+
 function BreakdownTable({
   title,
   rows,
   prospectMean,
+  resolveLabel,
 }: {
   title: string
   rows: ScopeBreakdownRow[]
   prospectMean: number
+  resolveLabel?: (row: ScopeBreakdownRow) => string
 }) {
   if (!rows.length) return null
   return (
@@ -42,7 +64,7 @@ function BreakdownTable({
             const c = prospectMean > 0 && mean != null ? (mean / prospectMean) * 100 : undefined
             return (
               <tr key={r.id}>
-                <td>{r.label}</td>
+                <td>{resolveLabel ? resolveLabel(r) : r.label}</td>
                 <td>{s?.unit ?? 'MMBOE'}</td>
                 <td>{fmt(s?.p90)}</td>
                 <td>{fmt(s?.p50)}</td>
@@ -59,7 +81,11 @@ function BreakdownTable({
 }
 
 export function ResultsPage() {
-  const { simulation } = useWorkflow()
+  const { simulation, segments, reservoirs } = useWorkflow()
+  const segmentNameById = Object.fromEntries(segments.map((s) => [s.id, s.name]))
+  const reservoirNameById = Object.fromEntries(reservoirs.map((r) => [r.id, r.name]))
+  const segmentIndexById = Object.fromEntries(segments.map((s, i) => [s.id, i]))
+  const reservoirIndexById = Object.fromEntries(reservoirs.map((r, i) => [r.id, i]))
 
   return (
     <div>
@@ -94,16 +120,27 @@ export function ResultsPage() {
                 title="By reservoir"
                 rows={simulation.breakdown.reservoirs}
                 prospectMean={simulation.breakdown.prospect.summaries.total_mmboe?.mean_trimmed ?? 0}
+                resolveLabel={(r) => reservoirNameById[r.id] ?? r.label}
               />
               <BreakdownTable
                 title="By segment"
                 rows={simulation.breakdown.segments}
                 prospectMean={simulation.breakdown.prospect.summaries.total_mmboe?.mean_trimmed ?? 0}
+                resolveLabel={(r) => segmentNameById[r.id] ?? r.label}
               />
               <BreakdownTable
                 title="By tank"
                 rows={simulation.breakdown.tanks}
                 prospectMean={simulation.breakdown.prospect.summaries.total_mmboe?.mean_trimmed ?? 0}
+                resolveLabel={(r) =>
+                  tankDisplayLabel(
+                    r,
+                    segmentNameById,
+                    reservoirNameById,
+                    segmentIndexById,
+                    reservoirIndexById,
+                  )
+                }
               />
             </>
           )}

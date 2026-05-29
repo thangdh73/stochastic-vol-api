@@ -65,7 +65,6 @@ export function ScatterCharts({ arrays }: ScatterChartsProps) {
           </select>
         </label>
       </div>
-      <p className="chart-caption">Workbook: Scatter Chart sheet (relationship plots)</p>
       <div className="preset-row">
         {RECOMMENDED_SCATTER_PAIRS.filter(
           (p) => keys.includes(p.x) && keys.includes(p.y),

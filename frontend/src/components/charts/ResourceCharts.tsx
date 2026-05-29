@@ -29,6 +29,8 @@ import {
 interface ResourceChartsProps {
   arrays: SimulationArrays
   summaries: Partial<Record<string, PercentileSummary | null | undefined>>
+  /** e.g. "Prospect total" or "R4-S1 — Reservoir4 – Zone 1" */
+  scopeLabel?: string
 }
 
 function summaryForKey(
@@ -55,7 +57,7 @@ function summaryForKey(
   }
 }
 
-export function ResourceCharts({ arrays, summaries }: ResourceChartsProps) {
+export function ResourceCharts({ arrays, summaries, scopeLabel }: ResourceChartsProps) {
   const available = RESOURCE_ARRAY_KEYS.filter((k) => arrays[k]?.length)
   const [product, setProduct] = useState<ResourceArrayKey>(
     available[0] ?? 'total_mmboe',
@@ -81,6 +83,11 @@ export function ResourceCharts({ arrays, summaries }: ResourceChartsProps) {
 
   return (
     <div className="chart-section">
+      {scopeLabel ? (
+        <p className="convention-inline chart-scope-caption">
+          Showing: <strong>{scopeLabel}</strong>
+        </p>
+      ) : null}
       <label className="chart-select-row">
         Resource output
         <select
@@ -98,7 +105,6 @@ export function ResourceCharts({ arrays, summaries }: ResourceChartsProps) {
       <div className="chart-grid">
         <div className="chart-card">
           <h3>Distribution histogram</h3>
-          <p className="chart-caption">Workbook: resource / yield distribution</p>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={histogram} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0e6ed" />
@@ -120,9 +126,6 @@ export function ResourceCharts({ arrays, summaries }: ResourceChartsProps) {
 
         <div className="chart-card">
           <h3>Exceedance curve</h3>
-          <p className="chart-caption">
-            P(X ≥ value). P90/P50/P10 markers (P10-large convention).
-          </p>
           <ResponsiveContainer width="100%" height={280}>
             <ComposedChart data={exceedance} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0e6ed" />
@@ -164,7 +167,6 @@ export function ResourceCharts({ arrays, summaries }: ResourceChartsProps) {
 
         <div className="chart-card">
           <h3>Percentile profile (P99 → P01)</h3>
-          <p className="chart-caption">Workbook: “P99 to P01” / Key Points scatter</p>
           <ResponsiveContainer width="100%" height={280}>
             <ComposedChart data={percentileScatter} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0e6ed" />

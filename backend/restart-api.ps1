@@ -12,5 +12,11 @@ foreach ($c in $conns) {
 }
 Start-Sleep -Seconds 2
 
+$venvPy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $venvPy)) {
+    Write-Host "No backend\.venv — run .\setup-venv.ps1 first" -ForegroundColor Yellow
+    exit 1
+}
+
 Write-Host "Starting MMRA API at http://127.0.0.1:8002 ..."
-python -m uvicorn app.main:app --reload --reload-dir . --reload-dir "..\engine" --host 127.0.0.1 --port 8002
+& $venvPy -m uvicorn app.main:app --reload --reload-dir . --reload-dir "..\engine" --host 127.0.0.1 --port 8002

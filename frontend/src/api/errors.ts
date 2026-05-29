@@ -8,9 +8,27 @@ function validationSummary(report: ValidationReport | undefined): string | undef
   return `${first.message}${first.recommended_action ? ` — ${first.recommended_action}` : ''}${more}`
 }
 
+const API_DOWN_HINT =
+  'The calculation API is not reachable on port 8002. From the project root run start-dev.bat (or start the "Stochastic Vol API (8002)" window). Check http://127.0.0.1:8002/health in the browser.'
+
 /** Turn API error payloads into readable messages for the UI. */
 export function formatApiError(err: unknown, context?: string): string {
   const raw = err instanceof Error ? err.message : String(err)
+  const status =
+    err instanceof Error && 'status' in err
+      ? (err as Error & { status?: number }).status
+      : undefined
+
+  if (
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    /bad gateway|ECONNREFUSED|Failed to fetch|NetworkError/i.test(raw)
+  ) {
+    const prefix = context ? `${context}. ` : ''
+    return `${prefix}${API_DOWN_HINT}`
+  }
+
   let detail: string | undefined
   let statusHint: string | undefined
   let validation: ValidationReport | undefined

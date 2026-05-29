@@ -26,6 +26,7 @@ export function RunSimulationButton({
     setLoading,
     setError,
     getGroupDependencyContext,
+    validateProspect,
   } = useWorkflow()
 
   if (!input) return null
@@ -34,10 +35,10 @@ export function RunSimulationButton({
     setLoading(true)
     setError(null)
     try {
-      const report = await api.validate(input)
+      const report = await validateProspect()
       setValidation(report)
       if (report.has_errors) {
-        setError('Simulation blocked: fix validation errors first (see QA/QC).')
+        setError('Simulation blocked: fix validation errors (see Output → Simulation or QA/QC).')
         return
       }
       const result = await api.simulate(input, true, getGroupDependencyContext() ?? undefined)

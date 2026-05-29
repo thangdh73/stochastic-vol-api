@@ -23,6 +23,8 @@ export interface DistributionSpec {
   low_clip?: number | null
   high_clip?: number | null
   notes?: string
+  /** When true, P50 is used in 3-point skew fit (normal / lognormal / beta). */
+  skew_enabled?: boolean
 }
 
 export interface CorrelationPair {
@@ -55,7 +57,16 @@ export interface ComplexTrapConfig {
 }
 
 export type EstimatingMethod = 'area_net_pay_yield' | 'nrv_grv_yield'
-export type NrvEntryMode = 'grv_fill_ntg' | 'direct'
+export type NrvEntryMode = 'grv_fill_ntg' | 'direct' | 'petrel_marginals'
+
+/** Petrel: 3 structural GRV (mid contact) + 3 contact GRV (mid structure), P90/P50/P10 order. */
+export interface PetrelGrvMarginals {
+  depth_grv: [number, number, number]
+  contact_grv: [number, number, number]
+  depth_weights?: [number, number, number]
+  contact_weights?: [number, number, number]
+  grv_matrix_3x3?: number[][]
+}
 export type OilResourceUnit = 'MMBO' | 'MMSTB' | 'MMscm'
 export type GasResourceUnit = 'BCF' | 'MMSCF' | 'Bscm'
 export type TotalResourceUnit = 'MMBOE'
@@ -94,6 +105,7 @@ export interface SimulationInput {
   complex_trap?: ComplexTrapConfig
   estimating_method?: EstimatingMethod
   nrv_entry_mode?: NrvEntryMode
+  petrel_grv_marginals?: PetrelGrvMarginals | null
   /** Per-iteration multiplier on direct NRV (fixed 1 = no change). */
   nrv_direct_multiplier_dist?: DistributionSpec | null
   cross_check_enabled?: boolean
@@ -125,6 +137,7 @@ export interface SimulationInput {
   net_to_gross_dist?: DistributionSpec | null
   nrv_direct_dist?: DistributionSpec | null
   cross_check_area_dist?: DistributionSpec | null
+  pet_evaluation_dist?: DistributionSpec | null
 }
 
 export type ReservoirSegmentType =
@@ -229,6 +242,14 @@ export interface ScopeBreakdownRow {
   segment_id?: string
   reservoir_id?: string
   summaries: Record<string, PercentileSummary>
+  /** Per-scope MC sample vectors when simulation ran with include_arrays. */
+  arrays?: SimulationArrays
+}
+
+export interface SimulateMultiTankMeta {
+  enabled: boolean
+  tank_count?: number
+  group_oat?: boolean
 }
 
 export interface SimulationBreakdown {
@@ -247,6 +268,7 @@ export interface SimulateResponse {
   result: SimulationResultPayload
   group_driver_map?: Record<string, { group_id: string; group_name: string }>
   breakdown?: SimulationBreakdown
+  multi_tank?: SimulateMultiTankMeta
 }
 
 export interface GroupDependencyContextPayload {
@@ -334,4 +356,20 @@ export interface ModulePreviewResponse {
   arrays: SimulationArrays
   summaries: Record<string, PercentileSummary | Record<string, unknown>>
   metadata: Record<string, unknown>
+}
+
+export interface DistributionPreviewResponse {
+  schema_version: string
+  engine_version: string
+  variable_id: string
+  display_name: string
+  distribution_type: string
+  skew_enabled: boolean
+  unit: string
+  n_iterations: number
+  seed: number
+  samples: number[]
+  summary: PercentileSummary
+  input_markers: { p90?: number | null; p50?: number | null; p10?: number | null }
+  validation: ValidationReport
 }

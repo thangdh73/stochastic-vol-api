@@ -82,6 +82,7 @@ def distribution_to_dict(dist: DistributionDef) -> Dict[str, Any]:
         "low_clip": dist.low_clip,
         "high_clip": dist.high_clip,
         "notes": dist.notes,
+        "skew_enabled": dist.skew_enabled,
         "solved_alpha": dist.solved_alpha,
         "solved_beta": dist.solved_beta,
         "solved_mu": dist.solved_mu,
@@ -116,6 +117,7 @@ def distribution_from_dict(data: Dict[str, Any]) -> DistributionDef:
         low_clip=data.get("low_clip"),
         high_clip=data.get("high_clip"),
         notes=data.get("notes", ""),
+        skew_enabled=bool(data.get("skew_enabled", False)),
         solved_alpha=data.get("solved_alpha"),
         solved_beta=data.get("solved_beta"),
         solved_mu=data.get("solved_mu"),
@@ -203,6 +205,7 @@ _DIST_FIELDS = (
     "nrv_direct_dist",
     "nrv_direct_multiplier_dist",
     "cross_check_area_dist",
+    "pet_evaluation_dist",
 )
 
 
@@ -295,6 +298,12 @@ def _correlations_for_export(inp: SimulationInput) -> List[CorrelationPair]:
     return filter_pairs_to_variables(inp.correlations, _correlatable_variables(inp))
 
 
+def _petrel_marginals_payload(raw: Any) -> Optional[Dict[str, Any]]:
+    from .petrel_grv import petrel_marginals_to_dict
+
+    return petrel_marginals_to_dict(raw)
+
+
 def simulation_input_to_dict(inp: SimulationInput) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -326,6 +335,9 @@ def simulation_input_to_dict(inp: SimulationInput) -> Dict[str, Any]:
         "complex_trap": complex_trap_to_dict(inp.complex_trap),
         "estimating_method": getattr(inp, "estimating_method", "area_net_pay_yield"),
         "nrv_entry_mode": getattr(inp, "nrv_entry_mode", "grv_fill_ntg"),
+        "petrel_grv_marginals": _petrel_marginals_payload(
+            getattr(inp, "petrel_grv_marginals", None)
+        ),
         "cross_check_enabled": getattr(inp, "cross_check_enabled", False),
         "grv_ntg_correlation": getattr(inp, "grv_ntg_correlation", 0.0),
         "oil_resource_unit": getattr(inp, "oil_resource_unit", "MMBO"),
@@ -346,6 +358,12 @@ def simulation_input_to_dict(inp: SimulationInput) -> Dict[str, Any]:
         dist = getattr(inp, name)
         payload[name] = distribution_to_dict(dist) if dist is not None else None
     return payload
+
+
+def _petrel_marginals_from_data(raw: Any) -> Optional[Any]:
+    from .petrel_grv import petrel_marginals_from_dict
+
+    return petrel_marginals_from_dict(raw if isinstance(raw, dict) else None)
 
 
 def simulation_input_from_dict(data: Dict[str, Any]) -> SimulationInput:
@@ -376,6 +394,7 @@ def simulation_input_from_dict(data: Dict[str, Any]) -> SimulationInput:
         "complex_trap": complex_trap_from_dict(data.get("complex_trap")),
         "estimating_method": data.get("estimating_method", "area_net_pay_yield"),
         "nrv_entry_mode": data.get("nrv_entry_mode", "grv_fill_ntg"),
+        "petrel_grv_marginals": _petrel_marginals_from_data(data.get("petrel_grv_marginals")),
         "cross_check_enabled": bool(data.get("cross_check_enabled", False)),
         "grv_ntg_correlation": float(data.get("grv_ntg_correlation", 0.0)),
         "oil_resource_unit": data.get("oil_resource_unit", "MMBO"),
