@@ -1,14 +1,16 @@
 # Stochastic volume calculation — API
 
-FastAPI backend + MMRA engine. Deployed for the portfolio app at `/tools/stochastic-volume/`.
+FastAPI backend + MMRA engine. Official demo: [thang-doan.vercel.app/tools/stochastic-volume/](https://thang-doan.vercel.app/tools/stochastic-volume/)
 
-## Deploy API (free — Render)
+**License:** See [LICENSE](LICENSE). Unauthorized public deployment or commercial use is not permitted.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/thangdh73/stochastic-vol-api)
+## Owner deploy (Render free tier)
 
-1. Click **Deploy to Render** (sign up / log in — free, no card required for free tier).
-2. Connect GitHub if prompted and **Apply** the blueprint (`render.yaml`).
-3. Wait for deploy (~5–10 min first build). Health: `https://stochastic-vol-api.onrender.com/health`
+From a local clone (not the public one-click button):
+
+1. Push this repo to your GitHub (private fork) or use this repo if you are the owner.
+2. [Render](https://render.com) → **New** → **Blueprint** → connect repo → apply `render.yaml`.
+3. Health: `https://YOUR-SERVICE.onrender.com/health`
 
 Free tier spins down after ~15 min idle; first request after sleep is slow (~30–60 s).
 

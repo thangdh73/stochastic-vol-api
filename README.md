@@ -63,3 +63,10 @@ Embed under a subpath on your portfolio site:
 Quick build: `.\deploy\build-personal-site.ps1` (default path `/tools/stochastic-volume/`)
 
 See `PROJECT_STATUS.md` for milestone progress.
+
+## License
+
+Copyright © 2026 Thang Doan Hong. See [LICENSE](LICENSE).
+
+Official demo only: https://thang-doan.vercel.app/tools/stochastic-volume/  
+Do not redeploy or use commercially without permission.

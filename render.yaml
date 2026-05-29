@@ -1,6 +1,5 @@
 # Render.com — deploy the calculation API (free tier).
-# Dashboard: New → Blueprint → connect repo → apply this file.
-# Or: https://render.com/deploy?repo=https://github.com/thangdh73/stochastic-vol-api
+# Owner only. See LICENSE — do not use public Deploy to Render for unauthorized copies.
 
 services:
   - type: web
