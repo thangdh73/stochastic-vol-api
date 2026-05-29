@@ -10,14 +10,20 @@ if (-not $PublicPath.StartsWith("/")) { $PublicPath = "/$PublicPath" }
 if (-not $PublicPath.EndsWith("/")) { $PublicPath = "$PublicPath/" }
 
 $ApiBase = if ($env:VITE_API_BASE) { $env:VITE_API_BASE } else { $PublicPath.TrimEnd("/") }
+$ApiOrigin = $env:VITE_API_ORIGIN
 
 Write-Host "Building frontend for: $PublicPath"
-Write-Host "API base: $ApiBase"
+if ($ApiOrigin) {
+  Write-Host "API origin: $ApiOrigin (direct — bypasses Vercel proxy)"
+} else {
+  Write-Host "API base: $ApiBase"
+}
 
 Push-Location $Frontend
 try {
   $env:VITE_BASE_PATH = $PublicPath
   $env:VITE_API_BASE = $ApiBase
+  if ($ApiOrigin) { $env:VITE_API_ORIGIN = $ApiOrigin }
   npm run build
   Write-Host ""
   Write-Host "Done. Static files: frontend\dist\"

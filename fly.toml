@@ -1,0 +1,33 @@
+# Fly.io — calculation API for Stochastic volume calculation
+# Deploy: fly deploy --remote-only
+
+app = 'stochastic-vol-api'
+primary_region = 'sin'
+
+[build]
+  dockerfile = 'deploy/Dockerfile'
+
+[env]
+  PYTHONPATH = '/app/engine'
+  MMRA_DATABASE_URL = 'sqlite:////app/backend/mmra.db'
+  PORT = '8002'
+
+[http_service]
+  internal_port = 8002
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '60s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
