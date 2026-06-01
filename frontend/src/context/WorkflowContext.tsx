@@ -23,6 +23,12 @@ import { isHcYieldDistKey } from '../utils/hcYieldControlColumns'
 import { updateDistribution, type DistKey } from '../utils/inputHelpers'
 import { applySharedNtgToLinkedTanks, mergeSharedNtgFields } from '../utils/tankNrvShared'
 import { syncGroupCorrelationMatrix, setGroupMatrixCell } from '../utils/groupCorrelations'
+import {
+  buildSegmentRowsForApi,
+  ensurePetrelCumulativeGrvBlock,
+  prospectUsesPetrelCumulative,
+} from '../utils/petrelCumulativeGrv'
+import { applyPetrelStructureScaleDefaultGroups } from '../utils/petrelStructureScaleGroups'
 import { tankId } from '../utils/tankLabels'
 import {
   listTanksInScope,
@@ -36,11 +42,29 @@ import {
   type PetroParamKey,
   type SetupUiSnapshot,
 } from '../utils/setupInputParams'
+import {
+  applySetupFormulaToInput,
+  resolveSetupFormulaId,
+  type SetupFormulaId,
+} from '../utils/setupFormula'
+import {
+  applyGasUnitSelectToInput,
+  applyOilUnitSelectToInput,
+  resolveGasUnitSelectId,
+  resolveOilUnitSelectId,
+  type GasUnitSelectId,
+  type OilUnitSelectId,
+} from '../utils/setupUnits'
+import type { RockVolumeInputUnit } from '../types/api'
+import { ensurePetrelGrvMarginals } from '../utils/petrelGrv'
 import type {
   DistributionSpec,
   GroupDependencyContextPayload,
   ModulePreviewResponse,
+  NrvEntryMode,
   ModuleScope,
+  PetrelCumulativeGrvBlock,
+  PetrelCumulativeRunResult,
   ReservoirItem,
   ReservoirSegment,
   ReservoirSegmentType,
@@ -136,6 +160,26 @@ interface WorkflowState {
   setPetEvaluationEnabled: (enabled: boolean) => void
   petEvalLabel: string
   setPetEvalLabel: (label: string) => void
+  setupFormulaId: SetupFormulaId
+  setSetupFormulaId: (formulaId: SetupFormulaId) => void
+  gasUnitSelectId: import('../utils/setupUnits').GasUnitSelectId
+  oilUnitSelectId: import('../utils/setupUnits').OilUnitSelectId
+  setSetupGasUnitSelect: (id: import('../utils/setupUnits').GasUnitSelectId) => void
+  setSetupOilUnitSelect: (id: import('../utils/setupUnits').OilUnitSelectId) => void
+  setSetupGrvInputUnit: (unit: import('../types/api').RockVolumeInputUnit) => void
+  petrelCumulativeGrv: PetrelCumulativeGrvBlock
+  setPetrelCumulativeGrv: (block: PetrelCumulativeGrvBlock) => void
+  petrelCumulativeResult: PetrelCumulativeRunResult | null
+  setPetrelCumulativeResult: (result: PetrelCumulativeRunResult | null) => void
+  rockVolumeMode: 'petrel_cumulative_structure' | undefined
+  setRockVolumeMode: (mode: 'petrel_cumulative_structure' | undefined) => void
+  setProspectNrvEntryMode: (mode: NrvEntryMode) => void
+  isPetrelCumulativeActive: boolean
+  runPetrelCumulativeSimulation: () => Promise<void>
+  runPetrelCumulativeTornado: (
+    tornadoMode?: 'group' | 'segment',
+    tankKey?: string | null,
+  ) => Promise<import('../types/api').PetrelCumulativeTornadoResponse>
 }
 
 const WorkflowContext = createContext<WorkflowState | null>(null)
@@ -171,10 +215,25 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const [groupCorrelationMode, setGroupCorrelationModeState] =
     useState<GroupCorrelationMode>('independent')
   const [setupUi, setSetupUi] = useState<SetupUiSnapshot>(defaultSetupUiSnapshot)
+  const [petrelCumulativeGrv, setPetrelCumulativeGrvState] = useState<PetrelCumulativeGrvBlock>({
+    segments: {},
+  })
+  const [petrelCumulativeResult, setPetrelCumulativeResult] =
+    useState<PetrelCumulativeRunResult | null>(null)
+  const [rockVolumeMode, setRockVolumeModeState] = useState<
+    'petrel_cumulative_structure' | undefined
+  >()
 
-  const applySetupUi = useCallback((snapshot: SetupUiSnapshot | undefined) => {
-    setSetupUi(snapshot ? { ...defaultSetupUiSnapshot(), ...snapshot } : defaultSetupUiSnapshot())
-  }, [])
+  const applySetupUi = useCallback(
+    (snapshot: SetupUiSnapshot | undefined, refInput?: SimulationInput | null) => {
+      const merged = snapshot
+        ? { ...defaultSetupUiSnapshot(), ...snapshot }
+        : defaultSetupUiSnapshot()
+      const formula_id = resolveSetupFormulaId(merged.formula_id, refInput ?? null)
+      setSetupUi({ ...merged, formula_id })
+    },
+    [],
+  )
 
   const grvParamLabels = setupUi.grv_param_labels
   const petroParamLabels = setupUi.petro_param_labels
@@ -282,7 +341,71 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     setValidation(null)
     setSimulation(null)
     setModulePreviews({})
+    setPetrelCumulativeResult(null)
   }, [])
+
+  const setupFormulaId = resolveSetupFormulaId(setupUi.formula_id, input)
+  const gasUnitSelectId = resolveGasUnitSelectId(setupUi.gas_unit_select_id, input?.gas_resource_unit)
+  const oilUnitSelectId = resolveOilUnitSelectId(setupUi.oil_unit_select_id, input?.oil_resource_unit)
+
+  const setSetupFormulaId = useCallback(
+    (formulaId: SetupFormulaId) => {
+      setSetupUi((prev) => ({ ...prev, formula_id: formulaId }))
+      setTankInputs((prev) => {
+        const next: Record<string, SimulationInput> = {}
+        for (const [key, tank] of Object.entries(prev)) {
+          next[key] = normalizeInput(applySetupFormulaToInput(tank, formulaId))
+        }
+        return next
+      })
+      clearRunState()
+    },
+    [clearRunState],
+  )
+
+  const setSetupGasUnitSelect = useCallback(
+    (selectId: GasUnitSelectId) => {
+      setSetupUi((prev) => ({ ...prev, gas_unit_select_id: selectId }))
+      setTankInputs((prev) => {
+        const next: Record<string, SimulationInput> = {}
+        for (const [key, tank] of Object.entries(prev)) {
+          next[key] = normalizeInput(applyGasUnitSelectToInput(tank, selectId))
+        }
+        return next
+      })
+      clearRunState()
+    },
+    [clearRunState],
+  )
+
+  const setSetupOilUnitSelect = useCallback(
+    (selectId: OilUnitSelectId) => {
+      setSetupUi((prev) => ({ ...prev, oil_unit_select_id: selectId }))
+      setTankInputs((prev) => {
+        const next: Record<string, SimulationInput> = {}
+        for (const [key, tank] of Object.entries(prev)) {
+          next[key] = normalizeInput(applyOilUnitSelectToInput(tank, selectId))
+        }
+        return next
+      })
+      clearRunState()
+    },
+    [clearRunState],
+  )
+
+  const setSetupGrvInputUnit = useCallback(
+    (unit: RockVolumeInputUnit) => {
+      setTankInputs((prev) => {
+        const next: Record<string, SimulationInput> = {}
+        for (const [key, tank] of Object.entries(prev)) {
+          next[key] = normalizeInput({ ...tank, grv_input_unit: unit })
+        }
+        return next
+      })
+      clearRunState()
+    },
+    [clearRunState],
+  )
 
   const getTankInput = useCallback(
     (segmentId: string, reservoirId: string) => {
@@ -1004,6 +1127,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       group_correlation_matrix: groupCorrelationMatrix,
       group_correlation_mode: groupCorrelationMode,
       setup_ui: setupUi,
+      petrel_cumulative_grv: petrelCumulativeGrv,
+      rock_volume_mode: rockVolumeMode,
     }
   }, [
     segments,
@@ -1015,12 +1140,17 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     groupCorrelationMatrix,
     groupCorrelationMode,
     setupUi,
+    petrelCumulativeGrv,
+    rockVolumeMode,
   ])
 
   const getGroupDependencyContext = useCallback((): GroupDependencyContextPayload | null => {
     if (!resolvedActiveSegmentId || !resolvedActiveReservoirId) return null
     const multiTank = segments.length * reservoirs.length > 1
-    if (!multiTank && uncertaintyGroups.length === 0) return null
+    const petrelCumulative =
+      rockVolumeMode === 'petrel_cumulative_structure' ||
+      prospectUsesPetrelCumulative(tankInputs)
+    if (!multiTank && uncertaintyGroups.length === 0 && !petrelCumulative) return null
     return {
       active_segment_id: resolvedActiveSegmentId,
       active_reservoir_id: resolvedActiveReservoirId,
@@ -1040,6 +1170,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     tankInputs,
     segments,
     reservoirs,
+    rockVolumeMode,
   ])
 
   const validateProspect = useCallback(async (): Promise<ValidationReport> => {
@@ -1067,6 +1198,132 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     return api.validate(input)
   }, [input, segments, reservoirs, tankInputs])
 
+  const isPetrelCumulativeActive = useMemo(
+    () =>
+      rockVolumeMode === 'petrel_cumulative_structure' ||
+      prospectUsesPetrelCumulative(tankInputs),
+    [rockVolumeMode, tankInputs],
+  )
+
+  const setPetrelCumulativeGrv = useCallback((block: PetrelCumulativeGrvBlock) => {
+    setPetrelCumulativeGrvState(block)
+    clearRunState()
+  }, [clearRunState])
+
+  const setRockVolumeMode = useCallback(
+    (mode: 'petrel_cumulative_structure' | undefined) => {
+      setRockVolumeModeState(mode)
+      if (mode === 'petrel_cumulative_structure') {
+        setTankInputs((prev) =>
+          Object.fromEntries(
+            Object.entries(prev).map(([key, tank]) => [
+              key,
+              normalizeInput({ ...tank, nrv_entry_mode: 'petrel_cumulative_structure' }),
+            ]),
+          ),
+        )
+        setPetrelCumulativeGrvState((prev) =>
+          ensurePetrelCumulativeGrvBlock(
+            prev,
+            segments,
+            reservoirs.map((r) => r.id),
+          ),
+        )
+        const { groups, matrix } = applyPetrelStructureScaleDefaultGroups(
+          uncertaintyGroups,
+          segments,
+          reservoirs,
+          groupCorrelationMatrix,
+        )
+        setUncertaintyGroups(groups)
+        setGroupCorrelationMatrix(matrix)
+      }
+      clearRunState()
+    },
+    [
+      clearRunState,
+      segments,
+      reservoirs,
+      uncertaintyGroups,
+      groupCorrelationMatrix,
+    ],
+  )
+
+  const setProspectNrvEntryMode = useCallback(
+    (mode: NrvEntryMode) => {
+      if (mode === 'petrel_cumulative_structure') {
+        setRockVolumeMode('petrel_cumulative_structure')
+        return
+      }
+      setRockVolumeModeState(undefined)
+      setTankInputs((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).map(([key, tank]) => {
+            let next: SimulationInput = { ...tank, nrv_entry_mode: mode }
+            if (mode === 'petrel_marginals') {
+              next = ensurePetrelGrvMarginals(next)
+            }
+            return [key, normalizeInput(next)]
+          }),
+        ),
+      )
+      clearRunState()
+    },
+    [clearRunState, setRockVolumeMode, segments, reservoirs],
+  )
+
+  const runPetrelCumulativeSimulation = useCallback(async () => {
+    const context = getGroupDependencyContext()
+    if (!context) {
+      throw new Error('Petrel cumulative simulation requires prospect tank context.')
+    }
+    const refTank = input ?? Object.values(tankInputs)[0]
+    if (!refTank) throw new Error('No tank input loaded.')
+    const rows = buildSegmentRowsForApi(petrelCumulativeGrv, segments, reservoirs)
+    const response = await api.petrelCumulativeSimulate({
+      segments: rows,
+      grv_input_unit: refTank.grv_input_unit ?? 'acre_ft',
+      n_iterations: refTank.n_iterations ?? 10_000,
+      seed: refTank.seed ?? 42,
+      independent_structure_scale: petrelCumulativeGrv.independent_structure_scale ?? false,
+      options: { include_arrays: true },
+      context,
+    })
+    setPetrelCumulativeResult(response.result)
+    setPetrelCumulativeGrvState((prev) => ({ ...prev, last_run: response.result }))
+  }, [
+    getGroupDependencyContext,
+    input,
+    tankInputs,
+    petrelCumulativeGrv,
+    segments,
+    reservoirs,
+  ])
+
+  const runPetrelCumulativeTornado = useCallback(
+    async (tornadoMode: 'group' | 'segment' = 'group', tankKey?: string | null) => {
+      const context = getGroupDependencyContext()
+      if (!context) {
+        throw new Error('Petrel cumulative tornado requires prospect tank context.')
+      }
+      const refTank = input ?? Object.values(tankInputs)[0]
+      if (!refTank) throw new Error('No tank input loaded.')
+      const allRows = buildSegmentRowsForApi(petrelCumulativeGrv, segments, reservoirs)
+      // Tank filter: enable only the selected tank so field GIIP target = that tank.
+      const rows = tankKey
+        ? allRows.map((r) => ({ ...r, enabled: r.tank_key === tankKey }))
+        : allRows
+      return api.petrelCumulativeTornado({
+        segments: rows,
+        grv_input_unit: refTank.grv_input_unit ?? 'acre_ft',
+        target_category: 'all',
+        tornado_mode: tornadoMode,
+        context,
+      })
+    },
+    [getGroupDependencyContext, input, tankInputs, petrelCumulativeGrv, segments, reservoirs],
+  )
+
   const loadFromEnvelope = useCallback((envelope: TankProjectEnvelope) => {
     setSegments(envelope.segments)
     setReservoirs(envelope.reservoirs)
@@ -1090,7 +1347,33 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     setUncertaintyGroups(envelope.uncertainty_groups ?? [])
     setGroupCorrelationMatrix(envelope.group_correlation_matrix ?? null)
     setGroupCorrelationModeState(envelope.group_correlation_mode ?? 'independent')
-    applySetupUi(envelope.setup_ui)
+    const firstTank = Object.values(normalized)[0]
+    applySetupUi(envelope.setup_ui, firstTank)
+    setPetrelCumulativeGrvState(
+      ensurePetrelCumulativeGrvBlock(
+        envelope.petrel_cumulative_grv,
+        envelope.segments,
+        envelope.reservoirs.map((r) => r.id),
+      ),
+    )
+    setRockVolumeModeState(envelope.rock_volume_mode)
+    setPetrelCumulativeResult(envelope.petrel_cumulative_grv?.last_run ?? null)
+    if (
+      envelope.rock_volume_mode === 'petrel_cumulative_structure' ||
+      prospectUsesPetrelCumulative(normalized)
+    ) {
+      const loadedGroups = envelope.uncertainty_groups ?? []
+      const { groups, matrix } = applyPetrelStructureScaleDefaultGroups(
+        loadedGroups,
+        envelope.segments,
+        envelope.reservoirs,
+        envelope.group_correlation_matrix ?? null,
+      )
+      if (groups !== loadedGroups) {
+        setUncertaintyGroups(groups)
+        setGroupCorrelationMatrix(matrix)
+      }
+    }
   }, [applySetupUi])
 
   const applyGroupsToMatrix = useCallback((groups: UncertaintyParameterGroup[]) => {
@@ -1323,6 +1606,23 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       setPetEvaluationEnabled,
       petEvalLabel,
       setPetEvalLabel,
+      setupFormulaId,
+      setSetupFormulaId,
+      gasUnitSelectId,
+      oilUnitSelectId,
+      setSetupGasUnitSelect,
+      setSetupOilUnitSelect,
+      setSetupGrvInputUnit,
+      petrelCumulativeGrv,
+      setPetrelCumulativeGrv,
+      petrelCumulativeResult,
+      setPetrelCumulativeResult,
+      rockVolumeMode,
+      setRockVolumeMode,
+      setProspectNrvEntryMode,
+      isPetrelCumulativeActive,
+      runPetrelCumulativeSimulation,
+      runPetrelCumulativeTornado,
     }),
     [
       reservoirs,
@@ -1397,6 +1697,23 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       setPetEvaluationEnabled,
       petEvalLabel,
       setPetEvalLabel,
+      setupFormulaId,
+      setSetupFormulaId,
+      gasUnitSelectId,
+      oilUnitSelectId,
+      setSetupGasUnitSelect,
+      setSetupOilUnitSelect,
+      setSetupGrvInputUnit,
+      petrelCumulativeGrv,
+      setPetrelCumulativeGrv,
+      petrelCumulativeResult,
+      setPetrelCumulativeResult,
+      rockVolumeMode,
+      setRockVolumeMode,
+      setProspectNrvEntryMode,
+      isPetrelCumulativeActive,
+      runPetrelCumulativeSimulation,
+      runPetrelCumulativeTornado,
     ],
   )
 

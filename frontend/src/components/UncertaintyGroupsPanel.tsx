@@ -12,6 +12,7 @@ import {
   suggestGroupName,
   UNCERTAINTY_PARAMETER_LABELS,
   UNCERTAINTY_PARAMETER_OPTIONS,
+  uncertaintyParameterOptionsForProspect,
 } from '../utils/uncertaintyGroups'
 
 type EditorState = {
@@ -25,11 +26,11 @@ type EditorState = {
   notes: string
 }
 
-function emptyEditor(): EditorState {
+function emptyEditor(defaultParameter: UncertaintyParameterId = 'porosity'): EditorState {
   return {
     id: newGroupId(),
     name: '',
-    parameter: 'porosity',
+    parameter: defaultParameter,
     segmentIds: [],
     reservoirIds: [],
     allSegments: false,
@@ -47,6 +48,7 @@ export function UncertaintyGroupsPanel({ compact = false }: { compact?: boolean 
     saveUncertaintyGroup,
     removeUncertaintyGroup,
     loadExampleUncertaintyGroups,
+    isPetrelCumulativeActive,
   } = useWorkflow()
 
   const hasPetrelGrvTanks = useMemo(() => {
@@ -58,6 +60,15 @@ export function UncertaintyGroupsPanel({ compact = false }: { compact?: boolean 
     }
     return false
   }, [segments, reservoirs, getTankInput])
+
+  const parameterOptions = useMemo(
+    () =>
+      uncertaintyParameterOptionsForProspect({
+        petrelCumulativeActive: isPetrelCumulativeActive,
+        petrelMarginalsActive: hasPetrelGrvTanks,
+      }),
+    [isPetrelCumulativeActive, hasPetrelGrvTanks],
+  )
 
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [nameTouched, setNameTouched] = useState(false)
@@ -84,11 +95,15 @@ export function UncertaintyGroupsPanel({ compact = false }: { compact?: boolean 
     return findMembershipConflicts(draft, uncertaintyGroups, segments, reservoirs)
   }, [editor, uncertaintyGroups, segments, reservoirs])
 
+  const defaultNewParameter: UncertaintyParameterId = isPetrelCumulativeActive
+    ? 'petrel_structure_scale'
+    : 'porosity'
+
   const openNew = () => {
     const firstSeg = segments[0]?.id
     const firstRes = reservoirs[0]?.id
     setEditor({
-      ...emptyEditor(),
+      ...emptyEditor(defaultNewParameter),
       segmentIds: firstSeg ? [firstSeg] : [],
       reservoirIds: firstRes ? [firstRes] : [],
     })
@@ -182,6 +197,15 @@ export function UncertaintyGroupsPanel({ compact = false }: { compact?: boolean 
             belong to <strong>one group per parameter</strong>. Set correlations between groups on
             the <Link to="/dependency/correlations">Correlations</Link> tab.
           </p>
+          {isPetrelCumulativeActive ? (
+            <p className="convention-inline">
+              <strong>Petrel cumulative GRV:</strong> use{' '}
+              <strong>{UNCERTAINTY_PARAMETER_LABELS.petrel_structure_scale}</strong> to link the
+              triangular BRV/structure scale across segments (one percentile per iteration; each
+              segment keeps its own low/mode/high from the GRV table). Do not add separate P1/P2/P3
+              groups — those values are columns in the cumulative GRV matrix.
+            </p>
+          ) : null}
           {hasPetrelGrvTanks ? (
             <p className="convention-inline">
               <strong>Petrel GRV (3+3):</strong> use{' '}
@@ -299,7 +323,7 @@ export function UncertaintyGroupsPanel({ compact = false }: { compact?: boolean 
                   })
                 }}
               >
-                {UNCERTAINTY_PARAMETER_OPTIONS.map((p) => (
+                {parameterOptions.map((p) => (
                   <option key={p} value={p}>
                     {UNCERTAINTY_PARAMETER_LABELS[p]}
                   </option>

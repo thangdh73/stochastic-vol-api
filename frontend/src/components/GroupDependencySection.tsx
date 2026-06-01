@@ -77,8 +77,8 @@ export function GroupDependencySection() {
           <p className="convention-inline">
             Correlations are between <strong>named groups</strong> (not individual tanks). Example:{' '}
             <code>Poro_R1_S1,2</code> ↔ <code>Sw_R1_S1,2</code> = −0.8; cross-compartment cells
-            stay 0. Diagonal is always 1. Engine rollout for group MC is pending — data is saved
-            with the project.
+            stay 0. Diagonal is always 1. Used by Petrel cumulative GRV Monte Carlo when sampling
+            mode is Rank or Gaussian copula (not when Independent).
           </p>
           <GroupCorrelationMatrixGrid
             matrix={groupCorrelationMatrix}

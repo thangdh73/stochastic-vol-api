@@ -1,8 +1,63 @@
-import type { GroupCorrelationMatrix } from '../types/uncertaintyGroups'
-import type { UncertaintyParameterGroup } from '../types/uncertaintyGroups'
+import type {
+  GroupCorrelationMatrix,
+  GroupCorrelationMode,
+  UncertaintyParameterGroup,
+} from '../types/uncertaintyGroups'
 import { cellHeatColor } from './correlations'
 
 export { cellHeatColor }
+
+export interface GroupCorrelationSummary {
+  /** Mode actually applied during MC (rank / gaussian_copula make the matrix active). */
+  mode: GroupCorrelationMode
+  /** True when the matrix is non-trivial AND the mode applies it during sampling. */
+  active: boolean
+  /** Non-zero off-diagonal unique pairs in the matrix. */
+  totalPairs: number
+  /** Non-zero pairs between a porosity group and a saturation (Sw) group. */
+  poroSwPairs: number
+}
+
+/** Count non-zero off-diagonal pairs in the group correlation matrix, plus Poro–Sw pairs. */
+export function summarizeGroupCorrelation(
+  matrix: GroupCorrelationMatrix | null,
+  groups: UncertaintyParameterGroup[],
+  mode: GroupCorrelationMode,
+): GroupCorrelationSummary {
+  const empty: GroupCorrelationSummary = {
+    mode,
+    active: false,
+    totalPairs: 0,
+    poroSwPairs: 0,
+  }
+  if (!matrix || !matrix.group_ids.length) return empty
+
+  const paramById = new Map(groups.map((g) => [g.id, g.parameter]))
+  let totalPairs = 0
+  let poroSwPairs = 0
+  const ids = matrix.group_ids
+  for (let i = 0; i < ids.length; i += 1) {
+    for (let j = i + 1; j < ids.length; j += 1) {
+      const rho = matrix.values[i]?.[j] ?? 0
+      if (Math.abs(rho) < 1e-9) continue
+      totalPairs += 1
+      const a = paramById.get(ids[i])
+      const b = paramById.get(ids[j])
+      const isPoroSw =
+        (a === 'porosity' && b === 'saturation') ||
+        (a === 'saturation' && b === 'porosity')
+      if (isPoroSw) poroSwPairs += 1
+    }
+  }
+
+  const applies = mode === 'rank' || mode === 'gaussian_copula'
+  return {
+    mode,
+    active: applies && totalPairs > 0,
+    totalPairs,
+    poroSwPairs,
+  }
+}
 
 export function buildEmptyGroupMatrix(
   groupIds: string[],

@@ -171,7 +171,7 @@ export function createDefaultInput(): SimulationInput {
       'fixed',
     ),
     porosity_dist: emptyDistribution('phi', 'Porosity', 'fraction', 'beta'),
-    saturation_dist: emptyDistribution('sat', 'HC Saturation', 'fraction', 'beta'),
+    saturation_dist: emptyDistribution('sat', 'Water saturation (Sw)', 'fraction', 'beta'),
     oil_recovery_dist: emptyDistribution(
       're_oil',
       'Oil Recovery Efficiency',

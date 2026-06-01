@@ -7,6 +7,7 @@ import { InputScopeBadge } from '../components/InputScopeBadge'
 import { ValidateBar } from '../components/ValidateBar'
 import { ValidationPanel } from '../components/ValidationPanel'
 import { useWorkflow } from '../context/WorkflowContext'
+import { summarizeGroupCorrelation } from '../utils/groupCorrelations'
 
 export function SimulationPage() {
   const navigate = useNavigate()
@@ -23,7 +24,17 @@ export function SimulationPage() {
     setError,
     getGroupDependencyContext,
     validateProspect,
+    isPetrelCumulativeActive,
+    runPetrelCumulativeSimulation,
+    uncertaintyGroups,
+    groupCorrelationMatrix,
+    groupCorrelationMode,
   } = useWorkflow()
+  const groupCorrelationSummary = summarizeGroupCorrelation(
+    groupCorrelationMatrix,
+    uncertaintyGroups,
+    groupCorrelationMode,
+  )
   const multiTank = segments.length * reservoirs.length > 1
   const [saveName, setSaveName] = useState('')
 
@@ -61,6 +72,11 @@ export function SimulationPage() {
     setLoading(true)
     setError(null)
     try {
+      if (isPetrelCumulativeActive) {
+        await runPetrelCumulativeSimulation()
+        navigate('/output/petrel-cumulative')
+        return
+      }
       const report = await validateProspect()
       setValidation(report)
       if (report.has_errors) {
@@ -115,6 +131,13 @@ export function SimulationPage() {
           Multi-tank mode: simulation rolls up all tank inputs in this prospect context.
           Uncertainty groups control dependency structure; non-grouped parameters stay
           tank-level.
+        </div>
+      )}
+
+      {isPetrelCumulativeActive && (
+        <div className="alert info">
+          Petrel cumulative GRV mode: runs a single MC loop for 1P/2P/3P GIIP with linked structure
+          scale. Results open on the Petrel cumulative page. GEF (not Bg) is used from HC Yield.
         </div>
       )}
 
@@ -186,7 +209,11 @@ export function SimulationPage() {
           Edit inputs on Prospect, Area, Net Pay, HC Yield, and Chance screens — changes
           apply here automatically.
         </p>
-        {input ? <InputSummary input={input} /> : <p>No input loaded.</p>}
+        {input ? (
+          <InputSummary input={input} groupCorrelation={groupCorrelationSummary} />
+        ) : (
+          <p>No input loaded.</p>
+        )}
       </div>
 
       <div className="card">

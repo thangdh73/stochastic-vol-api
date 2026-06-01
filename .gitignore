@@ -10,5 +10,7 @@ dist/
 ~$*.xlsx
 backend/data/*.db
 backend/data/*.db-journal
+backend/mmra.db
+backend/*.db-journal
 frontend/node_modules/
 frontend/dist/

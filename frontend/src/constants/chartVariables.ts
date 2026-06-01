@@ -11,7 +11,7 @@ export const ARRAY_LABELS: Record<string, string> = {
   net_to_gross: 'Net/Gross (fraction)',
   nrv_acft: 'NRV (ac-ft)',
   porosity: 'Porosity (fraction)',
-  saturation: 'HC saturation (fraction)',
+  saturation: 'Water saturation Sw (fraction)',
   hcpv_acft: 'HCPV (ac-ft)',
   oil_recovery: 'Oil recovery (fraction)',
   fvf: 'Oil FVF (rb/stb)',

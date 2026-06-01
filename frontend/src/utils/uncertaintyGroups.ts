@@ -17,7 +17,7 @@ export const UNCERTAINTY_PARAMETER_LABELS: Record<UncertaintyParameterId, string
   net_pay: 'Net pay',
   geometric_correction: 'Geometric correction',
   porosity: 'Porosity',
-  saturation: 'HC saturation (Sw)',
+  saturation: 'Water saturation (Sw)',
   oil_recovery: 'Oil recovery',
   fvf: 'Oil FVF',
   gor: 'GOR',
@@ -26,6 +26,7 @@ export const UNCERTAINTY_PARAMETER_LABELS: Record<UncertaintyParameterId, string
   gef: 'Gas expansion factor',
   condensate_yield: 'Condensate yield',
   nrv_direct: 'NRV direct',
+  petrel_structure_scale: 'Structure scale (Petrel cumulative)',
 }
 
 export const UNCERTAINTY_PARAMETER_OPTIONS: UncertaintyParameterId[] = [
@@ -48,7 +49,33 @@ export const UNCERTAINTY_PARAMETER_OPTIONS: UncertaintyParameterId[] = [
   'gas_recovery',
   'gef',
   'condensate_yield',
+  'petrel_structure_scale',
 ]
+
+/** Parameters shown in the group editor for the active rock-volume workflow. */
+export function uncertaintyParameterOptionsForProspect(opts: {
+  petrelCumulativeActive: boolean
+  petrelMarginalsActive: boolean
+}): UncertaintyParameterId[] {
+  const { petrelCumulativeActive, petrelMarginalsActive } = opts
+  if (petrelCumulativeActive) {
+    return [
+      'petrel_structure_scale',
+      'net_to_gross',
+      'porosity',
+      'saturation',
+      'gef',
+      'grv_percent_fill',
+      'nrv_direct',
+    ]
+  }
+  if (petrelMarginalsActive) {
+    return UNCERTAINTY_PARAMETER_OPTIONS.filter(
+      (p) => p !== 'petrel_structure_scale' && p !== 'grv',
+    )
+  }
+  return UNCERTAINTY_PARAMETER_OPTIONS.filter((p) => p !== 'petrel_structure_scale')
+}
 
 export function newGroupId(): string {
   return `ug_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
@@ -241,6 +268,7 @@ export function suggestGroupName(
     gef: 'GEF',
     condensate_yield: 'CY',
     nrv_direct: 'NRV',
+    petrel_structure_scale: 'StructScale',
   }
   const p = paramShort[parameter] ?? parameter
   const resPart = allReservoirs

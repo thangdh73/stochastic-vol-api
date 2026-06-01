@@ -1,13 +1,16 @@
 import type {
   DistributionPreviewResponse,
   DistributionSpec,
+  GroupDependencyContextPayload,
   HealthResponse,
   InputSet,
   ModulePreviewResponse,
   ModuleScope,
+  PetrelCumulativeSegmentRow,
+  PetrelCumulativeSimulateResponse,
+  PetrelCumulativeTornadoResponse,
   Prospect,
   PerturbationTornadoResponse,
-  GroupDependencyContextPayload,
   SimulateResponse,
   SimulationInput,
   ValidationReport,
@@ -198,4 +201,54 @@ export const api = {
         body: JSON.stringify({ input, options: { include_arrays: true } }),
       },
     ),
+
+  petrelCumulativeValidate: (body: {
+    segments: PetrelCumulativeSegmentRow[]
+    grv_input_unit: string
+    context?: GroupDependencyContextPayload | null
+  }) =>
+    request<{ validation: { ok: boolean }; preview: Record<string, unknown> }>(
+      '/api/simulate/petrel-cumulative/validate',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          ...body,
+          n_iterations: 10_000,
+          seed: 42,
+          context: prepareContextForApi(body.context ?? undefined),
+        }),
+      },
+    ),
+
+  petrelCumulativeSimulate: (body: {
+    segments: PetrelCumulativeSegmentRow[]
+    grv_input_unit: string
+    n_iterations: number
+    seed: number
+    independent_structure_scale?: boolean
+    options?: { include_arrays?: boolean }
+    context?: GroupDependencyContextPayload | null
+  }) =>
+    request<PetrelCumulativeSimulateResponse>('/api/simulate/petrel-cumulative', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...body,
+        context: prepareContextForApi(body.context ?? undefined),
+      }),
+    }),
+
+  petrelCumulativeTornado: (body: {
+    segments: PetrelCumulativeSegmentRow[]
+    grv_input_unit: string
+    target_category?: '1P' | '2P' | '3P' | 'all'
+    tornado_mode?: 'group' | 'segment'
+    context?: GroupDependencyContextPayload | null
+  }) =>
+    request<PetrelCumulativeTornadoResponse>('/api/simulate/petrel-cumulative/tornado', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...body,
+        context: prepareContextForApi(body.context ?? undefined),
+      }),
+    }),
 }

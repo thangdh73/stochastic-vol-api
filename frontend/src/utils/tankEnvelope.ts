@@ -9,6 +9,7 @@ import type {
   UncertaintyParameterGroup,
 } from '../types/uncertaintyGroups'
 import type { SetupUiSnapshot } from './setupInputParams'
+import type { PetrelCumulativeGrvBlock } from '../types/api'
 
 export interface TankProjectEnvelope {
   schema_version: '1'
@@ -23,6 +24,10 @@ export interface TankProjectEnvelope {
   group_correlation_mode?: GroupCorrelationMode
   /** Setup ↔ Input parameter labels and constants. */
   setup_ui?: SetupUiSnapshot
+  /** Prospect-wide Petrel cumulative GRV matrix (1P/2P/3P + structure scale). */
+  petrel_cumulative_grv?: PetrelCumulativeGrvBlock
+  /** When set, overrides per-tank nrv_entry_mode for rock volume workflow. */
+  rock_volume_mode?: 'petrel_cumulative_structure'
 }
 
 export const TANK_ENVELOPE_META_KEY = 'tank_envelope_v1'

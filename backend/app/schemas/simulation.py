@@ -85,7 +85,7 @@ class SimulationInputBody(BaseModel):
     correlation_matrix: Optional[CorrelationMatrixSpec] = None
     complex_trap: Optional[ComplexTrapConfigSpec] = None
     estimating_method: Literal["area_net_pay_yield", "nrv_grv_yield"] = "area_net_pay_yield"
-    nrv_entry_mode: Literal["grv_fill_ntg", "direct", "petrel_marginals"] = "grv_fill_ntg"
+    nrv_entry_mode: Literal["grv_fill_ntg", "direct", "petrel_marginals", "petrel_cumulative_structure"] = "grv_fill_ntg"
     petrel_grv_marginals: Optional[Dict[str, Any]] = None
     cross_check_enabled: bool = False
     grv_ntg_correlation: float = Field(default=0.0, ge=-1.0, le=1.0)
@@ -245,6 +245,60 @@ class SimulateResponse(BaseModel):
 class CsvExportResponse(BaseModel):
     tables: Dict[str, str]
     filename: str = "mmra_export.zip"
+
+
+class PetrelCumulativeSegmentRow(BaseModel):
+    tank_key: str
+    segment_id: Optional[str] = None
+    reservoir_id: Optional[str] = None
+    label: Optional[str] = None
+    grv_1p: float = Field(ge=0.0)
+    grv_2p: float = Field(ge=0.0)
+    grv_3p: float = Field(ge=0.0)
+    scale_low: float = Field(default=0.85, gt=0.0)
+    scale_mode: float = Field(default=1.0, gt=0.0)
+    scale_high: float = Field(default=1.17, gt=0.0)
+    enabled: bool = True
+
+
+class PetrelCumulativeOptions(BaseModel):
+    include_arrays: bool = False
+
+
+class PetrelCumulativeRequest(BaseModel):
+    segments: List[PetrelCumulativeSegmentRow]
+    grv_input_unit: Literal[
+        "acre_ft",
+        "thousand_acre_ft",
+        "ft3",
+        "m3",
+        "thousand_ft3",
+        "thousand_m3",
+        "million_ft3",
+        "million_m3",
+    ] = "acre_ft"
+    n_iterations: int = Field(default=10_000, ge=1000, le=100_000)
+    seed: int = 42
+    independent_structure_scale: bool = False
+    options: PetrelCumulativeOptions = Field(default_factory=PetrelCumulativeOptions)
+    context: Optional[GroupDependencyContext] = None
+
+
+class PetrelCumulativeTornadoRequest(BaseModel):
+    segments: List[PetrelCumulativeSegmentRow]
+    grv_input_unit: Literal[
+        "acre_ft",
+        "thousand_acre_ft",
+        "ft3",
+        "m3",
+        "thousand_ft3",
+        "thousand_m3",
+        "million_ft3",
+        "million_m3",
+    ] = "acre_ft"
+    target_category: Literal["1P", "2P", "3P", "all"] = "all"
+    tornado_mode: Literal["group", "segment"] = "group"
+    context: Optional[GroupDependencyContext] = None
 
 
 class ErrorResponse(BaseModel):

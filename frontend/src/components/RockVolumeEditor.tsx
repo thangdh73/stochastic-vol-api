@@ -19,22 +19,87 @@ import { formatDistShort, formatDistTypeLabel } from '../utils/distSummary'
 import { tankCode } from '../utils/tankLabels'
 import { PetrelGrvMarginalsPanel } from './PetrelGrvMarginalsPanel'
 import { RockVolumeEntryModePicker, rockVolumeModeLabel } from './RockVolumeEntryModePicker'
-import { ensurePetrelGrvMarginals } from '../utils/petrelGrv'
+import {
+  ensurePetrelGrvMarginals,
+  petrelCaseLabels,
+  petrelContactRowLabel,
+  petrelDepthRowLabel,
+} from '../utils/petrelGrv'
+import {
+  distributionForRockVolumeColumn,
+  grvDistributionFieldForSlot,
+  rockVolumeColumnKey,
+  rockVolumeColumns,
+  type RockVolumeColumn,
+} from '../utils/setupInputParams'
 
 type RockVolumeEditorProps = {
   /** Collapse editor after user finishes editing distributions. */
   onDone?: () => void
+  onSelectCumulative?: () => void
+}
+
+function RockVolumeColumnEditor({
+  col,
+  input,
+  grvUnit,
+  method,
+  onChange,
+}: {
+  col: RockVolumeColumn
+  input: NonNullable<ReturnType<typeof useWorkflow>['input']>
+  grvUnit: RockVolumeInputUnit
+  method: ReturnType<typeof effectiveEstimatingMethod>
+  onChange: (next: typeof input) => void
+}) {
+  if (col.kind === 'nrv_direct') {
+    const dist = input.nrv_direct_dist!
+    const nrvUnit: RockVolumeInputUnit = input.nrv_input_unit ?? 'acre_ft'
+    return (
+      <RockVolumeDistributionForm
+        canonicalDist={dist}
+        displayUnit={nrvUnit}
+        onCommit={(canonical) =>
+          onChange(updateDistribution(input, 'nrv_direct_dist', canonical))
+        }
+      />
+    )
+  }
+
+  const field = grvDistributionFieldForSlot(col.slot, method)
+  const dist = distributionForRockVolumeColumn(input, col)
+  if (!dist) return null
+
+  if (col.slot === 'depth') {
+    return (
+      <RockVolumeDistributionForm
+        canonicalDist={dist}
+        displayUnit={grvUnit}
+        onCommit={(canonical) => onChange(updateDistribution(input, field, canonical))}
+      />
+    )
+  }
+
+  return (
+    <DistributionPercentilesTable
+      dist={dist}
+      rowLabel={col.label}
+      onChange={(d) => onChange(updateDistribution(input, field, d))}
+    />
+  )
 }
 
 /** Collapsed strip: summary only until user clicks Edit. */
 export function RockVolumeEditorCollapsed({
   onOpen,
   onPatch,
+  onSelectCumulative,
 }: {
   onOpen: () => void
   onPatch: (next: NonNullable<ReturnType<typeof useWorkflow>['input']>) => void
+  onSelectCumulative?: () => void
 }) {
-  const { input, setInput, petroConstants, reservoirs, segments, activeReservoirId, activeSegmentId } =
+  const { input, setInput, petroConstants, grvParamLabels, reservoirs, segments, activeReservoirId, activeSegmentId } =
     useWorkflow()
 
   if (!input) return null
@@ -62,23 +127,42 @@ export function RockVolumeEditorCollapsed({
       ? tankCode(reservoirIndex, segmentIndex)
       : 'Active tank'
 
+  const volumeCols = rockVolumeColumns(grvParamLabels, petroConstants, input)
+
   const summaryItems = directMode
-    ? [{ label: 'NRV', value: formatDistShort(input.nrv_direct_dist) }]
+    ? [
+        {
+          col: volumeCols[0] ?? ({ kind: 'nrv_direct', label: 'Net Rock Volume' } as RockVolumeColumn),
+          label: volumeCols[0]?.label ?? 'Net Rock Volume',
+          value: formatDistShort(input.nrv_direct_dist),
+        },
+      ]
     : petrelMode && input.petrel_grv_marginals
-      ? [
-          {
-            label: 'Structure GRV',
-            value: input.petrel_grv_marginals.depth_grv.map((v) => v.toLocaleString()).join(' / '),
-          },
-          {
-            label: 'Contact GRV',
-            value: input.petrel_grv_marginals.contact_grv.map((v) => v.toLocaleString()).join(' / '),
-          },
-        ]
-      : [
-          { label: 'GRV', value: formatDistShort(input.grv_dist) },
-          { label: 'Fill', value: formatDistShort(input.grv_percent_fill_dist) },
-        ]
+      ? (() => {
+          const caseLabels = petrelCaseLabels()
+          const pm = input.petrel_grv_marginals!
+          return [
+            {
+              col: null,
+              label: petrelDepthRowLabel(grvParamLabels),
+              value: pm.depth_grv
+                .map((v, i) => `${caseLabels[i]}: ${v.toLocaleString()}`)
+                .join(' · '),
+            },
+            {
+              col: null,
+              label: petrelContactRowLabel(grvParamLabels),
+              value: pm.contact_grv
+                .map((v, i) => `${caseLabels[i]}: ${v.toLocaleString()}`)
+                .join(' · '),
+            },
+          ]
+        })()
+      : volumeCols.map((col) => ({
+          col,
+          label: col.label,
+          value: formatDistShort(distributionForRockVolumeColumn(input, col)),
+        }))
 
   return (
     <div className="card input-editor-collapsed">
@@ -91,6 +175,7 @@ export function RockVolumeEditorCollapsed({
           <RockVolumeEntryModePicker
             input={input}
             ntgConstantOnSetup={ntgConstant}
+            onSelectCumulative={onSelectCumulative}
             onPatch={(next) => {
               setInput(next)
               onPatch(next)
@@ -99,15 +184,10 @@ export function RockVolumeEditorCollapsed({
             compact
           />
           <dl className="input-editor-summary-dl">
-            {summaryItems.map(({ label, value }) => {
-              const dist =
-                label === 'GRV'
-                  ? input.grv_dist
-                  : label === 'Fill'
-                    ? input.grv_percent_fill_dist
-                      : input.nrv_direct_dist
+            {summaryItems.map(({ label, value, col }) => {
+              const dist = col ? distributionForRockVolumeColumn(input, col) : null
               return (
-                <div key={label}>
+                <div key={col ? rockVolumeColumnKey(col) : label}>
                   <dt>{label}</dt>
                   <dd>
                     {value}
@@ -132,8 +212,9 @@ export function RockVolumeEditorCollapsed({
 }
 
 /** Active-tank rock volume distributions (GRV × fill × NTG or direct NRV). */
-export function RockVolumeEditor({ onDone }: RockVolumeEditorProps) {
-  const { input, setInput, getModulePreview, setModulePreview, petroConstants } = useWorkflow()
+export function RockVolumeEditor({ onDone, onSelectCumulative }: RockVolumeEditorProps) {
+  const { input, setInput, getModulePreview, setModulePreview, petroConstants, grvParamLabels } =
+    useWorkflow()
   const ntgConstantOnSetup = petroConstants.ntg
   const [showPreview, setShowPreview] = useState(false)
   const nrvPreview = getModulePreview('nrv')
@@ -173,8 +254,6 @@ export function RockVolumeEditor({ onDone }: RockVolumeEditorProps) {
 
   const entryMode: NrvEntryMode = input.nrv_entry_mode ?? 'grv_fill_ntg'
   const grvUnit: RockVolumeInputUnit = input.grv_input_unit ?? 'acre_ft'
-  const grv = input.grv_dist
-  const fill = input.grv_percent_fill_dist
   const nrvDirect = input.nrv_direct_dist!
   const ccArea = input.cross_check_area_dist!
   const nrvUnit: RockVolumeInputUnit = input.nrv_input_unit ?? 'acre_ft'
@@ -183,6 +262,11 @@ export function RockVolumeEditor({ onDone }: RockVolumeEditorProps) {
   const reportVolumeUnit = entryMode === 'direct' ? nrvUnit : grvUnit
   const areaDisplayUnit = areaChartUnitFromInput(input)
   const ctStatus = complexTrapStatusMessage(input, nrvPreview?.metadata)
+  const volumeCols = rockVolumeColumns(grvParamLabels, petroConstants, input)
+  const showGrvNtgCorrelation =
+    !directMode &&
+    !petrelMode &&
+    volumeCols.some((c) => c.kind === 'grv_slot' && c.slot === 'depth')
 
   const handleInputChange = (next: typeof input) => {
     const ctWas = input.complex_trap?.enabled
@@ -207,6 +291,7 @@ export function RockVolumeEditor({ onDone }: RockVolumeEditorProps) {
             <RockVolumeEntryModePicker
               input={input}
               ntgConstantOnSetup={ntgConstantOnSetup}
+              onSelectCumulative={onSelectCumulative}
               onPatch={handleInputChange}
             />
             {onDone && (
@@ -230,35 +315,27 @@ export function RockVolumeEditor({ onDone }: RockVolumeEditorProps) {
             <PetrelGrvMarginalsPanel
               input={input}
               unit={grvUnit}
+              grvParamLabels={grvParamLabels}
               onChange={handleInputChange}
             />
           </>
         ) : !directMode ? (
           <>
             <div className="nrv-core-grid">
-              <div className="nrv-core-block">
-                <h3>GRV</h3>
-                <RockVolumeDistributionForm
-                  canonicalDist={grv!}
-                  displayUnit={grvUnit}
-                  helperText="Depth / structure (P90 ≤ P50 ≤ P10)."
-                  onCommit={(canonical) =>
-                    handleInputChange(updateDistribution(input, 'grv_dist', canonical))
-                  }
-                />
-              </div>
-              <div className="nrv-core-block">
-                <h3>Trap fill</h3>
-                <DistributionPercentilesTable
-                  dist={fill!}
-                  rowLabel="Trap fill"
-                  helperText="Pinchout / fluid contact (fraction 0–1)."
-                  onChange={(d) =>
-                    handleInputChange(updateDistribution(input, 'grv_percent_fill_dist', d))
-                  }
-                />
-              </div>
+              {volumeCols.map((col) => (
+                <div key={rockVolumeColumnKey(col)} className="nrv-core-block">
+                  <h3>{col.label}</h3>
+                  <RockVolumeColumnEditor
+                    col={col}
+                    input={input}
+                    grvUnit={grvUnit}
+                    method={method}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              ))}
             </div>
+            {showGrvNtgCorrelation && (
             <label className="input-inline-field">
               GRV–NTG ρ
               <NumericInput
@@ -269,12 +346,12 @@ export function RockVolumeEditor({ onDone }: RockVolumeEditorProps) {
                 }}
               />
             </label>
+            )}
           </>
         ) : (
           <RockVolumeDistributionForm
             canonicalDist={nrvDirect}
             displayUnit={nrvUnit}
-            helperText="Combined NRV from external workflow. P90 ≤ P50 ≤ P10."
             onCommit={(canonical) =>
               handleInputChange(updateDistribution(input, 'nrv_direct_dist', canonical))
             }

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ChartScopeFilter } from '../components/charts/ChartScopeFilter'
+import { PetrelCumulativeExpectationCurve } from '../components/charts/PetrelCumulativeExpectationCurve'
 import { ResourceCharts } from '../components/charts/ResourceCharts'
 import { WorkflowGate } from '../components/WorkflowGate'
 import { useChartScope } from '../hooks/useChartScope'
@@ -7,6 +8,32 @@ import { useWorkflow } from '../context/WorkflowContext'
 import { breakdownHasScopeArrays, scopeHasDedicatedArrays } from '../utils/chartScope'
 
 export function ExpectationCurvePage() {
+  const { isPetrelCumulativeActive, petrelCumulativeResult } = useWorkflow()
+
+  if (isPetrelCumulativeActive) {
+    return (
+      <div>
+        <h1 className="page-title">Expectation Curve</h1>
+        <WorkflowGate>
+          {petrelCumulativeResult ? (
+            <div className="card">
+              <PetrelCumulativeExpectationCurve result={petrelCumulativeResult} />
+            </div>
+          ) : (
+            <div className="alert info">
+              <Link to="/output/simulation">Run a Petrel cumulative simulation</Link> to
+              populate expectation curves.
+            </div>
+          )}
+        </WorkflowGate>
+      </div>
+    )
+  }
+
+  return <StandardExpectationCurve />
+}
+
+function StandardExpectationCurve() {
   const { simulation, segments, reservoirs } = useWorkflow()
   const { options, selection, setSelection, resolved } = useChartScope(
     simulation,

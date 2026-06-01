@@ -1,5 +1,6 @@
 import type { DistributionSpec, SimulationInput } from '../types/api'
 import { usesCcopRisk } from '../utils/calculationToggles'
+import type { GroupCorrelationSummary } from '../utils/groupCorrelations'
 
 const DIST_KEYS: { key: keyof SimulationInput; label: string }[] = [
   { key: 'area_dist', label: 'Area' },
@@ -7,7 +8,7 @@ const DIST_KEYS: { key: keyof SimulationInput; label: string }[] = [
   { key: 'net_pay_dist', label: 'Net pay' },
   { key: 'geometric_correction_dist', label: 'Geometric correction' },
   { key: 'porosity_dist', label: 'Porosity' },
-  { key: 'saturation_dist', label: 'HC saturation' },
+  { key: 'saturation_dist', label: 'Water saturation (Sw)' },
   { key: 'oil_recovery_dist', label: 'Oil recovery' },
   { key: 'fvf_dist', label: 'FVF' },
   { key: 'gor_dist', label: 'GOR' },
@@ -30,9 +31,21 @@ function distSummary(d: DistributionSpec): string {
 
 interface InputSummaryProps {
   input: SimulationInput
+  groupCorrelation?: GroupCorrelationSummary
 }
 
-export function InputSummary({ input }: InputSummaryProps) {
+function groupMatrixCorrelationText(g: GroupCorrelationSummary): string {
+  if (g.totalPairs === 0) {
+    return 'no correlated pairs defined'
+  }
+  const poro = g.poroSwPairs > 0 ? `, ${g.poroSwPairs} Poro–Sw pair(s)` : ''
+  if (g.active) {
+    return `active (${g.mode}), ${g.totalPairs} correlated pair(s)${poro}`
+  }
+  return `saved but not applied (mode: Independent), ${g.totalPairs} correlated pair(s)${poro}`
+}
+
+export function InputSummary({ input, groupCorrelation }: InputSummaryProps) {
   return (
     <div>
       <dl className="meta-grid">
@@ -66,6 +79,12 @@ export function InputSummary({ input }: InputSummaryProps) {
                 : 'Independent'}
           </dd>
         </div>
+        {groupCorrelation && (
+          <div>
+            <dt>Group correlation matrix</dt>
+            <dd>{groupMatrixCorrelationText(groupCorrelation)}</dd>
+          </div>
+        )}
         <div>
           <dt>Gas-oil ratio</dt>
           <dd>{input.gas_oil_ratio} mcf/bbl</dd>

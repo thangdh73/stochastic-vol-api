@@ -4,11 +4,7 @@ import { NumericInput } from '../components/NumericInput'
 import { WorkflowGate } from '../components/WorkflowGate'
 import { ReservoirSegmentManager } from '../components/ReservoirSegmentManager'
 import { useWorkflow } from '../context/WorkflowContext'
-import type {
-  GasResourceUnit,
-  OilResourceUnit,
-  RockVolumeInputUnit,
-} from '../types/api'
+import type { RockVolumeInputUnit } from '../types/api'
 import { ensureGasCondensateFields, ensureNrvDistributions } from '../utils/defaultInput'
 import { defaultPertForPetroKey } from '../utils/ensureSimulationReady'
 import type { DistributionSpec } from '../types/api'
@@ -29,46 +25,18 @@ import {
   type PetroParamKey,
   type SetupPetroListKey,
 } from '../utils/setupInputParams'
-
-type FormulaId = 'stoiip_sw' | 'giip_sw' | 'stoiip_so' | 'giip_sg'
-type FluidFamily = 'oil' | 'gas'
-type CompactUnitOption = { value: string; label: string }
-
-const FORMULA_OPTIONS: Array<{
-  id: FormulaId
-  label: string
-  family: FluidFamily
-}> = [
-  { id: 'stoiip_sw', label: 'STOIIP = GRV.NTG.PORO.(1-Sw)/Bo', family: 'oil' },
-  { id: 'giip_sw', label: 'GIIP = GRV.NTG.PORO.(1-Sw)/Bg', family: 'gas' },
-  { id: 'stoiip_so', label: 'STOIIP = GRV.NTG.PORO.So/Bo', family: 'oil' },
-  { id: 'giip_sg', label: 'GIIP = GRV.NTG.PORO.Sg/Bg', family: 'gas' },
-]
-
-const STOIIP_UNIT_OPTIONS: CompactUnitOption[] = [
-  { value: 'MMscm', label: 'm^3' },
-  { value: 'MMscm', label: '10^6 m^3' },
-  { value: 'MMSTB', label: 'bbl' },
-  { value: 'MMBO', label: 'Mbbl' },
-  { value: 'MMBO', label: 'MMbbl' },
-]
-
-const GIIP_UNIT_OPTIONS: CompactUnitOption[] = [
-  { value: 'Bscm', label: 'm^3' },
-  { value: 'Bscm', label: '10^6 m^3' },
-  { value: 'MMSCF', label: 'Mcf' },
-  { value: 'MMSCF', label: 'MMcf' },
-  { value: 'BCF', label: 'Bcf' },
-]
-
-const GRV_UNIT_OPTIONS: Array<{ value: RockVolumeInputUnit; label: string }> = [
-  { value: 'm3', label: 'm^3' },
-  { value: 'million_m3', label: '10^6 m^3' },
-  { value: 'ft3', label: 'ft^3' },
-  { value: 'thousand_ft3', label: '10^3 ft^3' },
-  { value: 'million_ft3', label: '10^6 ft^3' },
-  { value: 'acre_ft', label: 'acre-ft' },
-]
+import {
+  SETUP_FORMULA_OPTIONS,
+  setupFormulaFamily,
+  type SetupFormulaFamily,
+} from '../utils/setupFormula'
+import {
+  GIIP_UNIT_SELECT_OPTIONS,
+  GRV_UNIT_SELECT_OPTIONS,
+  STOIIP_UNIT_SELECT_OPTIONS,
+  type GasUnitSelectId,
+  type OilUnitSelectId,
+} from '../utils/setupUnits'
 
 export type SetupSection = 'overview' | 'metadata'
 
@@ -104,6 +72,14 @@ export function ProspectSetupPage({ section = 'overview' }: { section?: SetupSec
     setPetEvaluationEnabled,
     petEvalLabel,
     setPetEvalLabel,
+    setupFormulaId,
+    setSetupFormulaId,
+    gasUnitSelectId,
+    oilUnitSelectId,
+    setSetupGasUnitSelect,
+    setSetupOilUnitSelect,
+    setSetupGrvInputUnit,
+    isPetrelCumulativeActive,
   } = useWorkflow()
   const [selectedGrvParamIndex, setSelectedGrvParamIndex] = useState<number | null>(0)
   const [editingGrvParamIndex, setEditingGrvParamIndex] = useState<number | null>(null)
@@ -114,8 +90,6 @@ export function ProspectSetupPage({ section = 'overview' }: { section?: SetupSec
   const [editingSegmentValue, setEditingSegmentValue] = useState('')
   const [editingReservoirId, setEditingReservoirId] = useState<string | null>(null)
   const [editingReservoirValue, setEditingReservoirValue] = useState('')
-  const [selectedFormula, setSelectedFormula] = useState<FormulaId>('stoiip_sw')
-
   useEffect(() => {
     if (!input) return
     if (input.estimating_method === 'nrv_grv_yield') return
@@ -304,17 +278,13 @@ export function ProspectSetupPage({ section = 'overview' }: { section?: SetupSec
     })
   }
   const selectedFormulaOption =
-    FORMULA_OPTIONS.find((o) => o.id === selectedFormula) ?? FORMULA_OPTIONS[0]
-  const formulaFamily: FluidFamily = selectedFormulaOption.family
+    SETUP_FORMULA_OPTIONS.find((o) => o.id === setupFormulaId) ?? SETUP_FORMULA_OPTIONS[0]
+  const formulaFamily: SetupFormulaFamily = selectedFormulaOption.family
   const formulaLabel = formulaFamily === 'gas' ? 'GIIP' : 'STOIIP'
-  const formulaUnits = formulaFamily === 'gas' ? GIIP_UNIT_OPTIONS : STOIIP_UNIT_OPTIONS
-  const formulaUnitValue =
-    formulaFamily === 'gas'
-      ? input.gas_resource_unit ?? 'BCF'
-      : input.oil_resource_unit ?? 'MMBO'
+  const formulaUnitSelectId = formulaFamily === 'gas' ? gasUnitSelectId : oilUnitSelectId
 
-  const selectFormula = (option: (typeof FORMULA_OPTIONS)[number]) => {
-    setSelectedFormula(option.id)
+  const selectFormula = (option: (typeof SETUP_FORMULA_OPTIONS)[number]) => {
+    setSetupFormulaId(option.id)
   }
 
   const showOverview = section === 'overview'
@@ -326,12 +296,18 @@ export function ProspectSetupPage({ section = 'overview' }: { section?: SetupSec
       <div className="setup-classic-top">
         <div className="card setup-classic-card">
           <h3>Formula</h3>
-          {FORMULA_OPTIONS.map((opt) => (
+          {isPetrelCumulativeActive && (
+            <p className="convention-inline muted" style={{ margin: '0 0 0.5rem' }}>
+              Petrel cumulative runs always report <strong>GIIP</strong> (GEF on HC Yield). Your
+              formula choice here still applies to fluid type, units, and standard GRV×fill×NTG runs.
+            </p>
+          )}
+          {SETUP_FORMULA_OPTIONS.map((opt) => (
             <label key={opt.id} className="setup-classic-check">
               <input
                 type="radio"
                 name="setup-formula"
-                checked={selectedFormula === opt.id}
+                checked={setupFormulaId === opt.id}
                 onChange={() => selectFormula(opt)}
               />
               {opt.label}
@@ -344,18 +320,21 @@ export function ProspectSetupPage({ section = 'overview' }: { section?: SetupSec
             <dt>{formulaLabel}</dt>
             <dd>
               <select
-                value={formulaUnitValue}
+                value={formulaUnitSelectId}
                 onChange={(e) => {
                   if (formulaFamily === 'gas') {
-                    patch({ gas_resource_unit: e.target.value as GasResourceUnit })
+                    setSetupGasUnitSelect(e.target.value as GasUnitSelectId)
                   } else {
-                    patch({ oil_resource_unit: e.target.value as OilResourceUnit })
+                    setSetupOilUnitSelect(e.target.value as OilUnitSelectId)
                   }
                 }}
               >
-                {formulaUnits.map((u, idx) => (
-                  <option key={`${u.value}-${idx}`} value={u.value}>
-                    {u.label}
+                {(formulaFamily === 'gas'
+                  ? GIIP_UNIT_SELECT_OPTIONS
+                  : STOIIP_UNIT_SELECT_OPTIONS
+                ).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayLabel}
                   </option>
                 ))}
               </select>
@@ -364,9 +343,11 @@ export function ProspectSetupPage({ section = 'overview' }: { section?: SetupSec
             <dd>
               <select
                 value={input.grv_input_unit ?? 'acre_ft'}
-                onChange={(e) => patch({ grv_input_unit: e.target.value as RockVolumeInputUnit })}
+                onChange={(e) =>
+                  setSetupGrvInputUnit(e.target.value as RockVolumeInputUnit)
+                }
               >
-                {GRV_UNIT_OPTIONS.map((u) => (
+                {GRV_UNIT_SELECT_OPTIONS.map((u) => (
                   <option key={u.value} value={u.value}>
                     {u.label}
                   </option>
@@ -782,6 +763,15 @@ export function ProspectSetupPage({ section = 'overview' }: { section?: SetupSec
                         ? ensureGasCondensateFields(next)
                         : next,
                     )
+                    if (fluid_type === 'gas' || fluid_type === 'gas_condensate') {
+                      if (setupFormulaFamily(setupFormulaId) !== 'gas') {
+                        setSetupFormulaId('giip_sw')
+                      }
+                    } else if (fluid_type === 'oil') {
+                      if (setupFormulaFamily(setupFormulaId) !== 'oil') {
+                        setSetupFormulaId('stoiip_sw')
+                      }
+                    }
                   }}
                 >
                   <option value="oil">Oil</option>

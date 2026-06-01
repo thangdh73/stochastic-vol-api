@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { PetrelCumulativeCharts } from '../components/charts/PetrelCumulativeCharts'
 import { ChartScopeFilter } from '../components/charts/ChartScopeFilter'
 import { InputQcCharts } from '../components/charts/InputQcCharts'
 import { PerturbationTornadoChart } from '../components/charts/PerturbationTornadoChart'
@@ -13,7 +14,14 @@ import { breakdownHasScopeArrays, scopeHasDedicatedArrays } from '../utils/chart
 type TornadoMode = 'spearman' | 'oat'
 
 export function ChartsPage() {
-  const { input, simulation, segments, reservoirs } = useWorkflow()
+  const {
+    input,
+    simulation,
+    segments,
+    reservoirs,
+    isPetrelCumulativeActive,
+    petrelCumulativeResult,
+  } = useWorkflow()
   const { options, selection, setSelection, resolved } = useChartScope(
     simulation,
     segments,
@@ -39,7 +47,19 @@ export function ChartsPage() {
         </div>
       )}
 
-      {input && !simulation && (
+      {isPetrelCumulativeActive && petrelCumulativeResult && (
+        <div className="card">
+          <h2>Petrel cumulative GIIP</h2>
+          <p className="convention-inline">
+            Standard volumetric charts apply to GRV×fill×NTG runs. For Petrel cumulative mode, use
+            these GIIP charts or{' '}
+            <Link to="/output/petrel-cumulative">Petrel cumulative results</Link> (includes tornado).
+          </p>
+          <PetrelCumulativeCharts result={petrelCumulativeResult} />
+        </div>
+      )}
+
+      {input && !simulation && !petrelCumulativeResult && (
         <div className="alert info">
           <Link to="/output/simulation">Run a simulation</Link> for histogram and Spearman tornado.
         </div>

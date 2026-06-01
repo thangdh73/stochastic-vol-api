@@ -32,6 +32,7 @@ The MVP will provide a modern web-based workflow for single-zone pre-drill prosp
 - **No full workbook clone in MVP**: the MVP will not reproduce every worksheet, chart, macro, ActiveX dialog, hidden data table, or admin option.
 - **No multi-zone aggregation in MVP**: the first release is limited to a single-zone prospect.
 - **No full area-depth / GRV-depth engine in MVP**: this is deferred to phase 2 unless explicitly reprioritized.
+- **Petrel cumulative GRV + linked structure scale (P1)**: prospect-wide matrix of cumulative GRV 1P/2P/3P per segment, triangular structure-scale uncertainty linked across segments in one Monte Carlo loop (GIIP via GEF on HC Yield tab). Separate deterministic OAT tornado and dedicated results export. Distinct from Petrel GRV (3+3) marginals mode.
 - **No post-audit workflow in MVP**: post-drill audit and failure-category workflows are deferred.
 - **No full scenario comparison module in MVP**: scenario charts and scenario slots are deferred to phase 2.
 - **No commercial/economic threshold engine in MVP**: MCFS, MEFS, Pc, and Pe are deferred unless needed for the first build.

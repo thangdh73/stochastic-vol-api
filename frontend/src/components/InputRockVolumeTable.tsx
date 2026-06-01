@@ -1,7 +1,14 @@
+import { Fragment } from 'react'
 import { useWorkflow } from '../context/WorkflowContext'
 import type { DistributionSpec, SimulationInput } from '../types/api'
 import { effectiveEstimatingMethod } from '../utils/estimatingMethod'
-import { isNrvDirectFromNtgConstant } from '../utils/setupInputParams'
+import {
+  isNrvDirectFromNtgConstant,
+  rockVolumeColumnKey,
+  visibleRockVolumeColumns,
+  distributionForRockVolumeColumn,
+} from '../utils/setupInputParams'
+import { petrelCaseLabels, petrelContactRowLabel, petrelDepthRowLabel } from '../utils/petrelGrv'
 import { buildTankRows } from '../utils/tankLabels'
 
 function fmt(v: number | null | undefined): string {
@@ -24,6 +31,10 @@ function shortType(dist: DistributionSpec | null | undefined): string {
   if (t === 'lognormal') return 'Logn'
   if (t === 'pert') return 'PERT'
   return t
+}
+
+function tankUsesPetrelGrv(tank: SimulationInput | null | undefined): boolean {
+  return tank?.nrv_entry_mode === 'petrel_marginals'
 }
 
 function tankUsesDirectNrv(
@@ -53,8 +64,20 @@ export function InputRockVolumeTable({ onEditTank }: InputRockVolumeTableProps) 
     setActiveSegment,
     getTankInput,
     petroConstants,
+    grvParamLabels,
     input,
   } = useWorkflow()
+
+  const entryMode = input?.nrv_entry_mode ?? 'grv_fill_ntg'
+  const volumeCols = visibleRockVolumeColumns(
+    entryMode,
+    grvParamLabels,
+    petroConstants,
+    input ?? undefined,
+  )
+  const petrelCases = petrelCaseLabels()
+  const petrelDepthLabel = petrelDepthRowLabel(grvParamLabels)
+  const petrelContactLabel = petrelContactRowLabel(grvParamLabels)
 
   const rows = buildTankRows(reservoirs, segments, (segmentId, reservoirId) =>
     getTankInput(segmentId, reservoirId)?.estimating_method,
@@ -67,12 +90,12 @@ export function InputRockVolumeTable({ onEditTank }: InputRockVolumeTableProps) 
     setActiveReservoir(reservoirId)
   }
 
-  const anyDirect = rows.some((row) =>
-    tankUsesDirectNrv(getTankInput(row.segmentId, row.reservoirId), setupNtgConstant),
-  )
-  const anyGrvBuild = rows.some(
-    (row) => !tankUsesDirectNrv(getTankInput(row.segmentId, row.reservoirId), setupNtgConstant),
-  )
+  const showPetrelCols = entryMode === 'petrel_marginals'
+  const showDirectCols = entryMode === 'direct' || isNrvDirectFromNtgConstant(petroConstants, input)
+  const showGrvBuildCols = entryMode === 'grv_fill_ntg' && method === 'nrv_grv_yield'
+  const directColLabel =
+    volumeCols.find((c) => c.kind === 'nrv_direct')?.label ?? 'Net rock volume'
+  const petrelColCount = petrelCases.length * 2
 
   return (
     <div className="card input-rock-volume-card">
@@ -80,6 +103,13 @@ export function InputRockVolumeTable({ onEditTank }: InputRockVolumeTableProps) 
       <p className="convention-inline muted" style={{ margin: '0 0 0.5rem' }}>
         Click a row to select the active tank (editor opens below). P90 / P50 / P10 = low / mid / high.
         Use <strong>Edit</strong> to change distributions; click <strong>Done</strong> when finished.
+        {showGrvBuildCols && volumeCols.length > 0 && volumeCols.length < 3 && (
+          <>
+            {' '}
+            Only columns used in <strong>GRV × fill × NTG</strong> mode are shown (GRV and trap fill;
+            extra Setup GRV rows that map to the same fill input are hidden).
+          </>
+        )}
       </p>
 
       <div className="input-rock-volume-scroll">
@@ -88,23 +118,44 @@ export function InputRockVolumeTable({ onEditTank }: InputRockVolumeTableProps) 
             <tr>
               <th>Segment</th>
               <th>Reservoir</th>
-              {anyDirect && (
+              {showDirectCols && (
                 <>
-                  <th>Net rock volume</th>
+                  <th>{directColLabel}</th>
                   <th>Type</th>
                   <th>P90</th>
                   <th>P50</th>
                   <th>P10</th>
                 </>
               )}
-              {anyGrvBuild && method === 'nrv_grv_yield' && (
-                <>
-                  <th>GRV (P90/P50/P10)</th>
-                  <th>GRV type</th>
-                  <th>Fill (P90/P50/P10)</th>
-                </>
-              )}
-              {anyGrvBuild && method === 'area_net_pay_yield' && (
+              {showPetrelCols &&
+                petrelCases.map((l) => (
+                  <th key={`depth-${l}`}>
+                    {petrelDepthLabel} {l}
+                  </th>
+                ))}
+              {showPetrelCols &&
+                petrelCases.map((l) => (
+                  <th key={`contact-${l}`}>
+                    {petrelContactLabel} {l}
+                  </th>
+                ))}
+              {showGrvBuildCols &&
+                volumeCols.map((col) =>
+                  col.kind === 'grv_slot' && col.slot === 'depth' ? (
+                    <th key={rockVolumeColumnKey(col)}>{col.label} (P90/P50/P10)</th>
+                  ) : null,
+                )}
+              {showGrvBuildCols &&
+                volumeCols.some((c) => c.kind === 'grv_slot' && c.slot === 'depth') && (
+                  <th>Type</th>
+                )}
+              {showGrvBuildCols &&
+                volumeCols
+                  .filter((c) => c.kind === 'grv_slot' && c.slot !== 'depth')
+                  .map((col) => (
+                    <th key={rockVolumeColumnKey(col)}>{col.label} (P90/P50/P10)</th>
+                  ))}
+              {entryMode === 'grv_fill_ntg' && method === 'area_net_pay_yield' && (
                 <>
                   <th>Area (P90/P50/P10)</th>
                   <th>Fill (P90/P50/P10)</th>
@@ -118,12 +169,14 @@ export function InputRockVolumeTable({ onEditTank }: InputRockVolumeTableProps) 
             {rows.map((row) => {
               const t = getTankInput(row.segmentId, row.reservoirId)
               const direct = tankUsesDirectNrv(t, setupNtgConstant)
+              const petrelTank = tankUsesPetrelGrv(t)
               const active =
                 row.segmentId === activeSegmentId && row.reservoirId === activeReservoirId
               const nrv = t?.nrv_direct_dist
+              const netPay = t?.net_pay_dist
+              const petrel = t?.petrel_grv_marginals
               const grv = t?.grv_dist ?? t?.area_dist
               const fill = t?.grv_percent_fill_dist ?? t?.percent_fill_dist
-              const netPay = t?.net_pay_dist
 
               return (
                 <tr
@@ -133,7 +186,7 @@ export function InputRockVolumeTable({ onEditTank }: InputRockVolumeTableProps) 
                 >
                   <td>{row.segmentName}</td>
                   <td>{row.reservoirName}</td>
-                  {anyDirect && (
+                  {showDirectCols && (
                     <>
                       {direct ? (
                         <>
@@ -145,19 +198,49 @@ export function InputRockVolumeTable({ onEditTank }: InputRockVolumeTableProps) 
                         </>
                       ) : (
                         <td colSpan={5} className="muted">
-                          GRV × fill × NTG
+                          —
                         </td>
                       )}
                     </>
                   )}
-                  {anyGrvBuild && !direct && method === 'nrv_grv_yield' && (
+                  {showPetrelCols && (
                     <>
-                      <td>{fmtTriple(grv)}</td>
-                      <td>{shortType(grv)}</td>
-                      <td>{fmtTriple(fill)}</td>
+                      {petrelTank && petrel ? (
+                        <>
+                          {petrel.depth_grv.map((v, i) => (
+                            <td key={`d-${i}`}>{fmt(v)}</td>
+                          ))}
+                          {petrel.contact_grv.map((v, i) => (
+                            <td key={`c-${i}`}>{fmt(v)}</td>
+                          ))}
+                        </>
+                      ) : (
+                        <td colSpan={petrelColCount} className="muted">
+                          —
+                        </td>
+                      )}
                     </>
                   )}
-                  {anyGrvBuild && !direct && method === 'area_net_pay_yield' && (
+                  {showGrvBuildCols && !direct && !petrelTank && method === 'nrv_grv_yield' && t && (
+                    <>
+                      {volumeCols.map((col) => {
+                        if (col.kind !== 'grv_slot') return null
+                        const dist = distributionForRockVolumeColumn(t, col)
+                        if (col.slot === 'depth') {
+                          return (
+                            <Fragment key={rockVolumeColumnKey(col)}>
+                              <td>{fmtTriple(dist)}</td>
+                              <td>{shortType(dist)}</td>
+                            </Fragment>
+                          )
+                        }
+                        return (
+                          <td key={rockVolumeColumnKey(col)}>{fmtTriple(dist)}</td>
+                        )
+                      })}
+                    </>
+                  )}
+                  {entryMode === 'grv_fill_ntg' && !direct && !petrelTank && method === 'area_net_pay_yield' && (
                     <>
                       <td>{fmtTriple(grv)}</td>
                       <td>{fmtTriple(fill)}</td>

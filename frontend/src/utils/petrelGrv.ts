@@ -2,6 +2,27 @@ import type { PetrelGrvMarginals, RockVolumeInputUnit, SimulationInput } from '.
 
 export const PETREL_CASE_LABELS = ['P90 (low)', 'P50 (mid)', 'P10 (high)'] as const
 
+/**
+ * Three percentile case column headers for the Petrel 3+3 GRV matrix.
+ *
+ * These are the low/mid/high cases of EACH GRV axis (depth and fluid contact),
+ * not the Setup GRV-uncertainty source names. Stored vectors are ordered
+ * [low, mid, high] = [P90, P50, P10].
+ */
+export function petrelCaseLabels(): [string, string, string] {
+  return ['P90', 'P50', 'P10']
+}
+
+/** Row label for the structural (depth) GRV axis in Petrel 3+3 (from Setup GRV uncertainties). */
+export function petrelDepthRowLabel(grvParamLabels: string[]): string {
+  return grvParamLabels[0]?.trim() || 'Structure (depth)'
+}
+
+/** Row label for the fluid-contact GRV axis in Petrel 3+3 (from Setup GRV uncertainties). */
+export function petrelContactRowLabel(grvParamLabels: string[]): string {
+  return grvParamLabels[2]?.trim() || grvParamLabels[1]?.trim() || 'Fluid contact'
+}
+
 export function defaultPetrelGrvMarginals(
   depthMid = 10_000,
   contactMid = 10_000,

@@ -57,7 +57,11 @@ export interface ComplexTrapConfig {
 }
 
 export type EstimatingMethod = 'area_net_pay_yield' | 'nrv_grv_yield'
-export type NrvEntryMode = 'grv_fill_ntg' | 'direct' | 'petrel_marginals'
+export type NrvEntryMode =
+  | 'grv_fill_ntg'
+  | 'direct'
+  | 'petrel_marginals'
+  | 'petrel_cumulative_structure'
 
 /** Petrel: 3 structural GRV (mid contact) + 3 contact GRV (mid structure), P90/P50/P10 order. */
 export interface PetrelGrvMarginals {
@@ -372,4 +376,112 @@ export interface DistributionPreviewResponse {
   summary: PercentileSummary
   input_markers: { p90?: number | null; p50?: number | null; p10?: number | null }
   validation: ValidationReport
+}
+
+export interface PetrelCumulativeSegmentRow {
+  tank_key: string
+  segment_id?: string
+  reservoir_id?: string
+  label?: string
+  grv_1p: number
+  grv_2p: number
+  grv_3p: number
+  scale_low: number
+  scale_mode: number
+  scale_high: number
+  enabled?: boolean
+}
+
+export interface PetrelCumulativeGrvBlock {
+  segments: Record<string, PetrelCumulativeSegmentRow>
+  independent_structure_scale?: boolean
+  last_run?: PetrelCumulativeRunResult
+}
+
+export interface PetrelCumulativeCategorySummary {
+  p90: number
+  p50: number
+  mean_trimmed: number
+  p10: number
+  unit: string
+  product_name?: string
+}
+
+export interface PetrelCumulativeRunResult {
+  n_iterations: number
+  seed: number
+  grv_unit: string
+  gas_unit: string
+  independent_structure_scale: boolean
+  iteration_qc_pass: boolean
+  iteration_qc_violations: number
+  formula_note: string
+  field: Record<'1P' | '2P' | '3P', PetrelCumulativeCategorySummary>
+  segments: Array<{
+    tank_key: string
+    segment_id: string
+    reservoir_id: string
+    label: string
+    '1P': PetrelCumulativeCategorySummary
+    '2P': PetrelCumulativeCategorySummary
+    '3P': PetrelCumulativeCategorySummary
+  }>
+  arrays?: Record<string, number[]>
+}
+
+export interface PetrelCumulativeSimulateResponse {
+  schema_version: string
+  engine_version: string
+  validation: { ok: boolean; issues: Array<{ message: string; tank_key?: string }> }
+  result: PetrelCumulativeRunResult
+}
+
+export interface PetrelCumulativeTornadoDriver {
+  driver_id: string
+  label: string
+  swing_low: number
+  swing_high: number
+  delta_low: number
+  delta_high: number
+  is_fixed: boolean
+  parameter_family?: string
+  affected_groups?: string[]
+  affected_segments?: string[]
+  display_mode?: string
+}
+
+export interface PetrelCumulativeSegmentContribution {
+  segment_id: string
+  segment_label: string
+  reservoir_id: string
+  base_grv: number
+  base_giip: number
+  pct_of_total_giip: number
+  net_to_gross: number
+  porosity: number
+  saturation: number
+  gef: number
+}
+
+export interface PetrelCumulativeTornadoResponse {
+  schema_version: string
+  engine_version: string
+  validation: { ok: boolean; issues: Array<{ message: string }> }
+  tornado: {
+    categories?: Record<
+      string,
+      {
+        category: string
+        target_label: string
+        target_unit: string
+        base_giip: number
+        base_field_grv: number
+        tornado_mode?: string
+        segment_contributions?: PetrelCumulativeSegmentContribution[]
+        method_note: string
+        drivers: PetrelCumulativeTornadoDriver[]
+      }
+    >
+    structure_field_grv?: Record<string, { low: number; mode: number; high: number }>
+  }
 }

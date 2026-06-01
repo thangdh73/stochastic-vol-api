@@ -2,9 +2,11 @@ import { NumericInput } from './NumericInput'
 import { rockVolumeInputUnitLabel } from '../constants/inputUnits'
 import type { PetrelGrvMarginals, RockVolumeInputUnit } from '../types/api'
 import {
-  PETREL_CASE_LABELS,
   buildPetrelGrvMatrix,
   patchPetrelMarginals,
+  petrelCaseLabels,
+  petrelContactRowLabel,
+  petrelDepthRowLabel,
   updatePetrelCaseValue,
 } from '../utils/petrelGrv'
 import type { SimulationInput } from '../types/api'
@@ -12,17 +14,20 @@ import type { SimulationInput } from '../types/api'
 type Props = {
   input: SimulationInput
   unit: RockVolumeInputUnit
+  grvParamLabels: string[]
   onChange: (next: SimulationInput) => void
 }
 
 function CaseRow({
   label,
+  caseLabels,
   values,
   weights,
   onValue,
   onWeight,
 }: {
   label: string
+  caseLabels: [string, string, string]
   values: [number, number, number]
   weights: [number, number, number]
   onValue: (index: number, value: number | null) => void
@@ -31,7 +36,7 @@ function CaseRow({
   return (
     <tr>
       <th scope="row">{label}</th>
-      {PETREL_CASE_LABELS.map((caseLabel, i) => (
+      {caseLabels.map((caseLabel, i) => (
         <td key={caseLabel}>
           <span className="petrel-case-label">{caseLabel}</span>
           <NumericInput allowEmpty={false} value={values[i]} onChange={(v) => onValue(i, v)} />
@@ -50,7 +55,11 @@ function CaseRow({
   )
 }
 
-export function PetrelGrvMarginalsPanel({ input, unit, onChange }: Props) {
+export function PetrelGrvMarginalsPanel({ input, unit, grvParamLabels, onChange }: Props) {
+  const caseLabels = petrelCaseLabels()
+  const depthRowLabel = petrelDepthRowLabel(grvParamLabels)
+  const contactRowLabel = petrelContactRowLabel(grvParamLabels)
+
   const pm: PetrelGrvMarginals =
     input.petrel_grv_marginals ??
     ({
@@ -77,25 +86,24 @@ export function PetrelGrvMarginalsPanel({ input, unit, onChange }: Props) {
   return (
     <div className="petrel-grv-panel">
       <p className="convention-inline muted">
-        Paste <strong>three GRV values from Petrel structural cases</strong> (fixed mid fluid contact)
-        and <strong>three from fluid-contact cases</strong> (fixed mid structure). Units:{' '}
-        <strong>{rockVolumeInputUnitLabel(unit)}</strong>. Each Monte Carlo draw picks one depth
-        case and one contact case; GRV is taken from the derived 3×3 matrix. Tornado shows separate{' '}
-        <strong>Depth / structure</strong> and <strong>Fluid contact</strong> bars.
+        Units: <strong>{rockVolumeInputUnitLabel(unit)}</strong>. Each GRV axis ({depthRowLabel},{' '}
+        {contactRowLabel}) is entered at three percentile cases: {caseLabels.join(' / ')} (low / mid
+        / high).
       </p>
 
       <table className="data-table petrel-grv-input-table">
         <thead>
           <tr>
             <th />
-            {PETREL_CASE_LABELS.map((l) => (
+            {caseLabels.map((l) => (
               <th key={l}>{l}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           <CaseRow
-            label="Structure (depth)"
+            label={depthRowLabel}
+            caseLabels={caseLabels}
             values={pm.depth_grv}
             weights={depthWeights}
             onValue={(i, v) => {
@@ -110,7 +118,8 @@ export function PetrelGrvMarginalsPanel({ input, unit, onChange }: Props) {
             }}
           />
           <CaseRow
-            label="Fluid contact"
+            label={contactRowLabel}
+            caseLabels={caseLabels}
             values={pm.contact_grv}
             weights={contactWeights}
             onValue={(i, v) => {
@@ -129,20 +138,22 @@ export function PetrelGrvMarginalsPanel({ input, unit, onChange }: Props) {
 
       {matrix && (
         <div className="petrel-matrix-preview">
-          <h4>Derived GRV matrix (depth × contact)</h4>
+          <h4>Derived GRV matrix ({depthRowLabel} × {contactRowLabel})</h4>
           <table className="data-table petrel-matrix-table">
             <thead>
               <tr>
                 <th />
-                <th>Contact P90</th>
-                <th>Contact P50</th>
-                <th>Contact P10</th>
+                {caseLabels.map((l) => (
+                  <th key={`c-${l}`}>Contact {l}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {matrix.map((row, ri) => (
-                <tr key={PETREL_CASE_LABELS[ri]}>
-                  <th scope="row">{PETREL_CASE_LABELS[ri]}</th>
+                <tr key={caseLabels[ri]}>
+                  <th scope="row">
+                    {depthRowLabel} {caseLabels[ri]}
+                  </th>
                   {row.map((cell, ci) => (
                     <td key={ci}>{cell.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                   ))}

@@ -13,6 +13,8 @@ from ..schemas.simulation import (
     HealthResponse,
     ModulePreviewRequest,
     PerturbationTornadoRequest,
+    PetrelCumulativeRequest,
+    PetrelCumulativeTornadoRequest,
     SimulateRequest,
     SimulationInputBody,
     ValidationReportResponse,
@@ -26,6 +28,9 @@ from ..services.engine_adapter import (
     get_pm3xd_input_body,
     module_preview,
     perturbation_tornado,
+    petrel_cumulative_simulate,
+    petrel_cumulative_tornado,
+    petrel_cumulative_validate,
     simulate,
     validate_input,
 )
@@ -39,6 +44,8 @@ API_FEATURES = [
     "simulate_preview",
     "distribution_preview",
     "tornado_perturbation",
+    "petrel_cumulative",
+    "petrel_cumulative_tornado",
     "export",
 ]
 
@@ -146,6 +153,30 @@ def run_perturbation_tornado(request: PerturbationTornadoRequest) -> dict:
             },
         )
     return payload
+
+
+@router.post("/simulate/petrel-cumulative/validate")
+def run_petrel_cumulative_validate(request: PetrelCumulativeRequest) -> dict:
+    try:
+        return petrel_cumulative_validate(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/simulate/petrel-cumulative")
+def run_petrel_cumulative(request: PetrelCumulativeRequest) -> dict:
+    try:
+        return petrel_cumulative_simulate(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/simulate/petrel-cumulative/tornado")
+def run_petrel_cumulative_tornado_endpoint(request: PetrelCumulativeTornadoRequest) -> dict:
+    try:
+        return petrel_cumulative_tornado(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/simulate")

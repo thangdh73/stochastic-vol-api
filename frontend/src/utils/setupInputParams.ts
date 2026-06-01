@@ -1,4 +1,4 @@
-import type { DistributionSpec, SimulationInput } from '../types/api'
+import type { DistributionSpec, EstimatingMethod, SimulationInput } from '../types/api'
 import { emptyDistribution, ensureNrvDistributions } from './defaultInput'
 import { defaultPertForPetroKey } from './ensureSimulationReady'
 import { effectiveEstimatingMethod } from './estimatingMethod'
@@ -150,6 +150,11 @@ export type RockVolumeColumn =
   | { kind: 'grv_slot'; index: number; slot: GrvParamSlot; label: string }
   | { kind: 'nrv_direct'; label: string }
 
+export function rockVolumeColumnKey(col: RockVolumeColumn): string {
+  if (col.kind === 'nrv_direct') return 'nrv_direct'
+  return `${col.slot}-${col.index}`
+}
+
 export function rockVolumeColumns(
   grvParamLabels: string[],
   petroConstants: Record<PetroParamKey, boolean>,
@@ -167,6 +172,33 @@ export function rockVolumeColumns(
     .filter((col): col is Extract<RockVolumeColumn, { kind: 'grv_slot' }> => col != null)
 }
 
+/** Columns to show in All tanks — rock volume for the active entry mode only. */
+export function visibleRockVolumeColumns(
+  entryMode: string | undefined,
+  grvParamLabels: string[],
+  petroConstants: Record<PetroParamKey, boolean>,
+  input?: SimulationInput | null,
+): RockVolumeColumn[] {
+  const mode = entryMode ?? 'grv_fill_ntg'
+  if (mode === 'petrel_cumulative_structure' || mode === 'petrel_marginals') {
+    return []
+  }
+  const cols = rockVolumeColumns(grvParamLabels, petroConstants, input)
+  if (mode === 'direct') {
+    return cols.filter((c) => c.kind === 'nrv_direct')
+  }
+  const seenFields = new Set<string>()
+  const out: RockVolumeColumn[] = []
+  for (const col of cols) {
+    if (col.kind !== 'grv_slot') continue
+    const field = grvDistributionFieldForSlot(col.slot, 'nrv_grv_yield')
+    if (seenFields.has(field)) continue
+    seenFields.add(field)
+    out.push(col)
+  }
+  return out
+}
+
 export function distributionForRockVolumeColumn(
   input: SimulationInput,
   col: RockVolumeColumn,
@@ -175,6 +207,23 @@ export function distributionForRockVolumeColumn(
     return input.nrv_direct_dist
   }
   return grvDistributionForIndex(input, col.index)
+}
+
+export function grvDistributionFieldForSlot(
+  slot: GrvParamSlot,
+  method?: EstimatingMethod,
+): 'grv_dist' | 'grv_percent_fill_dist' | 'net_pay_dist' {
+  const m = method ?? 'nrv_grv_yield'
+  switch (slot) {
+    case 'depth':
+      return 'grv_dist'
+    case 'pinchout':
+      return 'grv_percent_fill_dist'
+    case 'owc':
+      return m === 'nrv_grv_yield' ? 'grv_percent_fill_dist' : 'net_pay_dist'
+    default:
+      return 'grv_dist'
+  }
 }
 
 export function inputPathForGrv(
@@ -260,6 +309,11 @@ export interface SetupUiSnapshot {
   petro_param_labels: Record<PetroParamKey, string>
   petro_constants: Record<PetroParamKey, boolean>
   petro_constant_values: Record<PetroParamKey, number | null>
+  /** Selected volumetric formula on Setup (persisted with project). */
+  formula_id?: import('./setupFormula').SetupFormulaId
+  /** Unique id for GIIP/STOIIP unit dropdown row (see setupUnits.ts). */
+  gas_unit_select_id?: import('./setupUnits').GasUnitSelectId
+  oil_unit_select_id?: import('./setupUnits').OilUnitSelectId
   /** When true, PET Evaluation appears in the petrophysical uncertainties list. */
   pet_evaluation_enabled?: boolean
   /** Display label for the PET Evaluation factor (petrophysical list). */
@@ -318,6 +372,7 @@ export function defaultSetupUiSnapshot(): SetupUiSnapshot {
     petro_param_labels: { ...DEFAULT_PETRO_PARAM_LABELS },
     petro_constants: { ntg: false, poro: false, sw: false, bo: false },
     petro_constant_values: { ntg: null, poro: null, sw: null, bo: null },
+    formula_id: 'stoiip_sw',
     pet_evaluation_enabled: true,
     pet_eval_label: DEFAULT_PET_EVAL_LABEL,
   }

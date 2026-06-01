@@ -48,6 +48,27 @@ from mmra_engine.petrel_grv import (  # noqa: E402
     petrel_depth_swing_scalars,
     petrel_marginals_from_dict,
 )
+from mmra_engine.petrel_cumulative_groups import (
+    PETREL_STRUCTURE_SCALE_PARAMETER,
+    build_per_tank_var_group_map,
+)
+from mmra_engine.petrel_cumulative_grv import (
+    build_structure_scale_group_map,
+    build_structure_scale_uniform_by_tank,  # noqa: E402
+    PetrelSegmentInput,
+    build_group_scores,
+    build_petro_sample_arrays,
+    result_to_dict as petrel_cumulative_result_to_dict,
+    run_petrel_cumulative_mc,
+    scaled_grv_preview,
+    segment_from_dict,
+    validate_grv_inputs,
+    validation_result_to_dict,
+)
+from mmra_engine.petrel_cumulative_tornado import (  # noqa: E402
+    compute_all_category_tornados,
+    compute_petrel_cumulative_tornado,
+)
 from mmra_engine.correlation import CorrelationPair  # noqa: E402
 from mmra_engine.validation import (  # noqa: E402
     ValidationReport,
@@ -63,6 +84,9 @@ from mmra_engine.validation_cases import (  # noqa: E402
 from ..schemas.simulation import (  # noqa: E402
     DistributionSpec,
     GroupDependencyContext,
+    PetrelCumulativeRequest,
+    PetrelCumulativeSegmentRow,
+    PetrelCumulativeTornadoRequest,
     SimulationInputBody,
 )
 
@@ -137,6 +161,8 @@ def _build_active_group_map(
 ) -> Dict[str, str]:
     active_map: Dict[str, str] = {}
     for group in context.uncertainty_groups:
+        if group.parameter == PETREL_STRUCTURE_SCALE_PARAMETER:
+            continue
         variable = _GROUP_PARAM_TO_VAR.get(group.parameter)
         if not variable:
             continue
@@ -1171,3 +1197,209 @@ def build_excel_bytes(
         return path.read_bytes()
     finally:
         path.unlink(missing_ok=True)
+
+
+def _petrel_segments_from_rows(
+    rows: list[PetrelCumulativeSegmentRow],
+    grv_unit: str,
+) -> list[PetrelSegmentInput]:
+    segments: list[PetrelSegmentInput] = []
+    for row in rows:
+        data = row.model_dump()
+        segments.append(
+            segment_from_dict(
+                row.tank_key,
+                data,
+                grv_unit=grv_unit,
+                segment_id=row.segment_id or "",
+                reservoir_id=row.reservoir_id or "",
+                segment_label=row.label or "",
+                enabled=row.enabled,
+            )
+        )
+    return segments
+
+
+def _petrel_tank_inputs_from_context(
+    context: Optional[GroupDependencyContext],
+) -> Dict[str, SimulationInput]:
+    if not context or not context.tank_inputs:
+        raise ValueError("Petrel cumulative simulation requires context.tank_inputs.")
+    return {k: body_to_engine_input(v) for k, v in context.tank_inputs.items()}
+
+
+def _petrel_var_to_group_maps(
+    context: GroupDependencyContext,
+) -> Dict[str, Dict[str, str]]:
+    tank_keys = [k for k in (context.tank_inputs or {}) if "::" in k]
+    return build_per_tank_var_group_map(
+        context.uncertainty_groups,
+        tank_keys,
+        context.segment_ids or [],
+        context.reservoir_ids or [],
+    )
+
+
+def _petrel_group_scores_for_context(
+    context: GroupDependencyContext,
+    n: int,
+    seed: int,
+) -> Dict[str, np.ndarray]:
+    groups = [g.id for g in context.uncertainty_groups]
+    matrix = context.group_correlation_matrix
+    values = matrix.values if matrix else None
+    group_ids = matrix.group_ids if matrix else None
+    return build_group_scores(
+        groups,
+        n,
+        seed,
+        correlation_mode=context.group_correlation_mode or "independent",
+        correlation_matrix=values,
+        matrix_group_ids=group_ids,
+    )
+
+
+def petrel_cumulative_validate(
+    request: PetrelCumulativeRequest,
+) -> Dict[str, Any]:
+    segments = _petrel_segments_from_rows(request.segments, request.grv_input_unit)
+    validation = validate_grv_inputs(segments)
+    preview: Dict[str, Any] = {}
+    for seg in segments:
+        if not seg.enabled:
+            continue
+        preview[seg.tank_key] = {
+            "increments": validation.increments.get(seg.tank_key, {}),
+            "scaled_2p_grv": scaled_grv_preview(
+                seg.grv_2p_acft,
+                seg.scale_low,
+                seg.scale_mode,
+                seg.scale_high,
+                request.grv_input_unit,
+            ),
+        }
+    return {
+        "validation": validation_result_to_dict(validation),
+        "preview": preview,
+    }
+
+
+def petrel_cumulative_simulate(
+    request: PetrelCumulativeRequest,
+) -> Dict[str, Any]:
+    segments = _petrel_segments_from_rows(request.segments, request.grv_input_unit)
+    validation = validate_grv_inputs(segments)
+    if not validation.ok:
+        raise ValueError(
+            "; ".join(i.message for i in validation.issues) or "GRV validation failed."
+        )
+    context = request.context
+    if context is None:
+        raise ValueError("Petrel cumulative simulation requires group dependency context.")
+    tank_inputs = _petrel_tank_inputs_from_context(context)
+    active_keys = [s.tank_key for s in segments if s.enabled]
+    missing = [k for k in active_keys if k not in tank_inputs]
+    if missing:
+        raise ValueError(f"Missing tank_inputs for: {', '.join(missing)}")
+
+    n = int(request.n_iterations)
+    seed = int(request.seed)
+    var_maps = _petrel_var_to_group_maps(context)
+    group_ids = [g.id for g in context.uncertainty_groups]
+    group_scores = _petrel_group_scores_for_context(context, n, seed) if group_ids else {}
+    petro, reservoir_gef = build_petro_sample_arrays(
+        tank_inputs,
+        active_keys,
+        var_maps,
+        group_scores,
+        n,
+        seed,
+    )
+
+    structure_u_by_tank = None
+    if not request.independent_structure_scale:
+        struct_map = build_structure_scale_group_map(
+            context.uncertainty_groups,
+            active_keys,
+            context.segment_ids or [],
+            context.reservoir_ids or [],
+        )
+        if struct_map:
+            struct_group_ids = sorted(set(struct_map.values()))
+            struct_scores = {
+                gid: group_scores[gid]
+                for gid in struct_group_ids
+                if gid in group_scores
+            }
+            if struct_scores:
+                structure_u_by_tank = build_structure_scale_uniform_by_tank(
+                    active_keys,
+                    struct_map,
+                    struct_scores,
+                    n,
+                    seed,
+                )
+
+    ref_inp = tank_inputs[active_keys[0]]
+    gas_unit = getattr(ref_inp, "gas_resource_unit", "BCF") or "BCF"
+    result = run_petrel_cumulative_mc(
+        segments,
+        tank_inputs,
+        n_iterations=n,
+        seed=seed,
+        grv_display_unit=request.grv_input_unit,
+        gas_resource_unit=gas_unit,
+        independent_structure_scale=request.independent_structure_scale,
+        include_arrays=request.options.include_arrays,
+        petro_samples=petro,
+        reservoir_gef_samples=reservoir_gef,
+        structure_u_by_tank=structure_u_by_tank,
+    )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "engine_version": ENGINE_VERSION,
+        "validation": validation_result_to_dict(validation),
+        "result": petrel_cumulative_result_to_dict(
+            result, include_arrays=request.options.include_arrays
+        ),
+    }
+
+
+def petrel_cumulative_tornado(
+    request: PetrelCumulativeTornadoRequest,
+) -> Dict[str, Any]:
+    segments = _petrel_segments_from_rows(request.segments, request.grv_input_unit)
+    validation = validate_grv_inputs(segments)
+    if not validation.ok:
+        raise ValueError(
+            "; ".join(i.message for i in validation.issues) or "GRV validation failed."
+        )
+    context = request.context
+    if context is None:
+        raise ValueError("Petrel cumulative tornado requires group dependency context.")
+    tank_inputs = _petrel_tank_inputs_from_context(context)
+    ref_key = next(s.tank_key for s in segments if s.enabled)
+    gas_unit = getattr(tank_inputs[ref_key], "gas_resource_unit", "BCF") or "BCF"
+    kwargs = {
+        "grv_display_unit": request.grv_input_unit,
+        "gas_unit": gas_unit,
+        "uncertainty_groups": context.uncertainty_groups,
+        "segment_ids": context.segment_ids or [],
+        "reservoir_ids": context.reservoir_ids or [],
+        "tornado_mode": getattr(request, "tornado_mode", None) or "group",
+    }
+    if request.target_category == "all":
+        payload = compute_all_category_tornados(segments, tank_inputs, **kwargs)
+    else:
+        tr = compute_petrel_cumulative_tornado(
+            segments, tank_inputs, category=request.target_category, **kwargs
+        )
+        from mmra_engine.petrel_cumulative_tornado import tornado_result_to_dict
+
+        payload = {"categories": {request.target_category: tornado_result_to_dict(tr)}}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "engine_version": ENGINE_VERSION,
+        "validation": validation_result_to_dict(validation),
+        "tornado": payload,
+    }

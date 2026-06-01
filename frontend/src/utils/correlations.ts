@@ -5,7 +5,7 @@ import { effectiveEstimatingMethod } from './estimatingMethod'
 /** Recommended pairs — Area × Net Pay method. */
 export const RECOMMENDED_PAIRS_AREA: { a: string; b: string; label: string }[] = [
   { a: 'area', b: 'net_pay', label: 'Area ↔ Net pay' },
-  { a: 'porosity', b: 'saturation', label: 'Porosity ↔ HC saturation' },
+  { a: 'porosity', b: 'saturation', label: 'Porosity ↔ Water saturation (Sw)' },
   { a: 'porosity', b: 'oil_recovery', label: 'Porosity ↔ Oil recovery' },
   { a: 'fvf', b: 'gor', label: 'Oil FVF ↔ GOR' },
 ]
@@ -13,7 +13,7 @@ export const RECOMMENDED_PAIRS_AREA: { a: string; b: string; label: string }[] =
 /** Recommended pairs — NRV / GRV method. */
 export const RECOMMENDED_PAIRS_NRV: { a: string; b: string; label: string }[] = [
   { a: 'grv', b: 'net_to_gross', label: 'GRV ↔ Net/Gross' },
-  { a: 'porosity', b: 'saturation', label: 'Porosity ↔ HC saturation' },
+  { a: 'porosity', b: 'saturation', label: 'Porosity ↔ Water saturation (Sw)' },
   { a: 'porosity', b: 'oil_recovery', label: 'Porosity ↔ Oil recovery' },
   { a: 'fvf', b: 'gor', label: 'Oil FVF ↔ GOR' },
 ]
@@ -30,7 +30,7 @@ export const VARIABLE_LABELS: Record<string, string> = {
   net_to_gross: 'Net/Gross',
   nrv_direct: 'NRV direct (acre-ft)',
   porosity: 'Porosity',
-  saturation: 'HC saturation',
+  saturation: 'Water saturation (Sw)',
   oil_recovery: 'Oil recovery',
   fvf: 'Oil FVF',
   gor: 'GOR',

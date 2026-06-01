@@ -19,6 +19,8 @@ export type UncertaintyParameterId =
   | 'gef'
   | 'condensate_yield'
   | 'nrv_direct'
+  /** Petrel cumulative GRV: linked triangular structure / BRV scale (not P1/P2/P3 GRV). */
+  | 'petrel_structure_scale'
 
 export interface UncertaintyGroupMember {
   segment_id: string

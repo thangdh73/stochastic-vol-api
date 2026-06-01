@@ -24,6 +24,7 @@ import { LoginPage } from './pages/Login'
 import { NetPayPage } from './pages/NetPay'
 import { NrvInputPage } from './pages/NrvInput'
 import { ProspectSetupPage } from './pages/ProspectSetup'
+import { PetrelCumulativeResultsPage } from './pages/PetrelCumulativeResults'
 import { ResultsPage } from './pages/Results'
 import { SimulationPage } from './pages/Simulation'
 import { TornadoWorkbenchPage } from './pages/TornadoWorkbench'
@@ -85,6 +86,7 @@ export default function App() {
                   <Route path="simulation" element={<SimulationPage />} />
                   <Route path="charts" element={<ChartsPage />} />
                   <Route path="export" element={<ExportPage />} />
+                  <Route path="petrel-cumulative" element={<PetrelCumulativeResultsPage />} />
                 </Route>
 
                 <Route path="tornado" element={<TornadoWorkbenchPage />} />

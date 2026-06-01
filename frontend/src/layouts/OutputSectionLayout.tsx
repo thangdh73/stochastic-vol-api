@@ -6,6 +6,7 @@ const OUTPUT_SUB_PAGES = [
   { to: '/output/results', label: 'Results', end: true },
   { to: '/output/simulation', label: 'Simulation' },
   { to: '/output/charts', label: 'Charts & QC' },
+  { to: '/output/petrel-cumulative', label: 'Petrel cumulative' },
   { to: '/output/export', label: 'Export' },
 ] as const
 
