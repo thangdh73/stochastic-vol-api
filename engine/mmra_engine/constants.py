@@ -76,6 +76,8 @@ HC_SAT_MAX_FRACTION: float = 0.95     # 95%
 
 OIL_FVF_MIN: float = 1.0             # rb/stb
 OIL_FVF_MAX: float = 4.0             # rb/stb
+OIL_FVF_ERROR_MIN: float = 0.01      # rb/stb — physical floor; STOIIP divides by Bo, so
+                                      # values <= 0 are non-physical and blocking, not just a warning
 
 GEF_MIN: float = 25.0                 # scf/reservoir ft³
 GEF_MAX: float = 750.0                # scf/reservoir ft³

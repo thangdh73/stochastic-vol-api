@@ -35,6 +35,7 @@ from .constants import (
     HC_SAT_MAX_FRACTION,
     OIL_FVF_MIN,
     OIL_FVF_MAX,
+    OIL_FVF_ERROR_MIN,
     GEF_MIN,
     GEF_MAX,
     CHANCE_MIN,
@@ -281,6 +282,7 @@ def validate_distribution_def(
         * ``"saturation"`` – fraction + workbook range [15 %, 95 %].
         * ``"fvf"`` – FVF range [1.0, 4.0] rb/stb (warning outside).
         * ``"gef"`` – GEF range [25, 750] scf/res ft³ (warning outside).
+          Values < 1 are treated as Bg; effective GEF = 1/Bg for range checks.
         * ``"generic"`` – no additional range checks.
 
     limits : dict, optional
@@ -653,7 +655,7 @@ _KIND_LIMITS = {
     "porosity":   (POROSITY_MIN_FRACTION, POROSITY_MAX_FRACTION,    0.0, 1.0),
     "saturation": (HC_SAT_MIN_FRACTION,   HC_SAT_MAX_FRACTION,       0.0, 1.0),
     "fraction":   (0.0,                   1.0,                       0.0, 1.0),
-    "fvf":        (OIL_FVF_MIN,           OIL_FVF_MAX,               0.0, float("inf")),
+    "fvf":        (OIL_FVF_MIN,           OIL_FVF_MAX,               OIL_FVF_ERROR_MIN, float("inf")),
     "gef":        (GEF_MIN,               GEF_MAX,                   0.0, float("inf")),
     "positive_resource": (0.0,            float("inf"),              0.0, float("inf")),
     "generic":    (None,                  None,                      None, None),
@@ -673,6 +675,11 @@ def _check_range(
 ) -> ValidationReport:
     """Return a ValidationReport with range findings for *value*."""
     report = ValidationReport()
+
+    if variable_kind == "gef" and value > 0:
+        from .volumetrics import effective_gef_scf_per_res_ft3
+
+        value = float(effective_gef_scf_per_res_ft3(value))
 
     # Resolve limits
     row = _KIND_LIMITS.get(variable_kind, _KIND_LIMITS["generic"])

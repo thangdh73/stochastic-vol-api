@@ -11,6 +11,7 @@ import {
 } from '../utils/calculationToggles'
 import { updateDistribution, type DistKey } from '../utils/inputHelpers'
 import { hcYieldTableColumns, tankShowsNtgColumn } from '../utils/hcYieldControlColumns'
+import { ensureGasCondensateFields } from '../utils/defaultInput'
 import { pickSharedHcYieldFields } from '../utils/tankHcYieldShared'
 import { tankCode } from '../utils/tankLabels'
 
@@ -53,6 +54,13 @@ export function HcYieldActiveTankEditor({ onDone }: Props) {
     }
   }, [input, isGas, setInput])
 
+  useEffect(() => {
+    if (!input || input.fluid_type !== 'gas_condensate') return
+    if (!input.condensate_yield_dist) {
+      setInput(ensureGasCondensateFields(input))
+    }
+  }, [input, setInput])
+
   if (!input) return null
 
   const reservoirIndex = reservoirs.findIndex((r) => r.id === activeReservoirId)
@@ -73,12 +81,11 @@ export function HcYieldActiveTankEditor({ onDone }: Props) {
     },
   ]
 
+  // Condensate yield (CGR) is shown as a main distribution column for gas-condensate,
+  // so the secondary panel only carries gas recovery here.
   const gasExtraFields: { key: DistKey; asPercent?: boolean; title: string }[] = [
     { key: 'gas_recovery_dist', asPercent: true, title: 'Gas recovery' },
   ]
-  if (input.fluid_type === 'gas_condensate') {
-    gasExtraFields.push({ key: 'condensate_yield_dist', title: 'Condensate yield' })
-  }
 
   const anyTankNtg = tankShowsNtgColumn(petroConstants, input)
   const mainColumns = hcYieldTableColumns(input, anyTankNtg)
@@ -158,7 +165,7 @@ export function HcYieldActiveTankEditor({ onDone }: Props) {
         </details>
       )}
 
-      <details className="input-details-panel">
+      <details className="input-details-panel" open>
         <summary>Secondary parameters (recovery, GOR, …)</summary>
         <div className="input-details-body">
           <div className="hc-yield-dist-grid">

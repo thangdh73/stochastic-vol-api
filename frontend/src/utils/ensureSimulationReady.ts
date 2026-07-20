@@ -1,5 +1,11 @@
 import type { DistributionSpec, SimulationInput } from '../types/api'
-import { ensureGasCondensateFields, ensureNrvDistributions, emptyDistribution } from './defaultInput'
+import {
+  emptyDistribution,
+  ensureGasCondensateFields,
+  ensureNrvDistributions,
+  ensurePetrelGefDist,
+  PETREL_DEFAULT_GEF_SCF_PER_RES_FT3,
+} from './defaultInput'
 import { prepareInputForApi } from './prepareInputForApi'
 
 function distNeedsPercentiles(dist: DistributionSpec | null | undefined): boolean {
@@ -86,29 +92,23 @@ function repairAllDists(input: SimulationInput): SimulationInput {
   return out
 }
 
-/** Fill missing P90/P10 on HC yield and recovery distributions so validation can pass. */
+/**
+ * Fill missing P90/P10 on HC yield distributions that are safe to default
+ * (e.g. gas-side GEF/recovery, where a placeholder does not silently mask a
+ * required physical input). Porosity, water saturation, oil recovery, and
+ * GOR are intentionally NOT auto-filled here: leaving them blank must
+ * surface as a blocking validation error (missing P90/P10) rather than be
+ * silently replaced with a fabricated distribution the user never entered.
+ */
 export function ensureHcYieldDistributions(input: SimulationInput): SimulationInput {
   const isOil = input.fluid_type === 'oil'
   const isGas = input.fluid_type === 'gas' || input.fluid_type === 'gas_condensate'
 
   let out: SimulationInput = { ...input }
 
-  if (distNeedsPercentiles(out.porosity_dist) && out.porosity_dist) {
-    out.porosity_dist = withPercentiles(out.porosity_dist, 0.12, 0.18, 0.24)
-  }
-  if (distNeedsPercentiles(out.saturation_dist) && out.saturation_dist) {
-    out.saturation_dist = withPercentiles(out.saturation_dist, 0.55, 0.7, 0.85)
-  }
-
   if (isOil) {
-    if (distNeedsPercentiles(out.oil_recovery_dist) && out.oil_recovery_dist) {
-      out.oil_recovery_dist = withPercentiles(out.oil_recovery_dist, 0.25, 0.35, 0.45)
-    }
     if (out.fvf_dist?.distribution_type === 'fixed' && out.fvf_dist.fixed_value == null) {
       out.fvf_dist = { ...out.fvf_dist, fixed_value: 1.2 }
-    }
-    if (distNeedsPercentiles(out.gor_dist) && out.gor_dist) {
-      out.gor_dist = withPercentiles(out.gor_dist, 400, 800, 1200)
     }
   }
 
@@ -116,12 +116,19 @@ export function ensureHcYieldDistributions(input: SimulationInput): SimulationIn
     if (distNeedsPercentiles(out.gas_recovery_dist) && out.gas_recovery_dist) {
       out.gas_recovery_dist = withPercentiles(out.gas_recovery_dist, 0.6, 0.75, 0.9)
     }
-    if (out.gef_dist?.distribution_type === 'fixed' && out.gef_dist.fixed_value == null) {
-      out.gef_dist = { ...out.gef_dist, fixed_value: 0.0035 }
+    if (out.gef_dist?.distribution_type === 'fixed') {
+      const fv = out.gef_dist.fixed_value
+      if (fv == null || fv === 0) {
+        out.gef_dist = {
+          ...out.gef_dist,
+          fixed_value: 1 / PETREL_DEFAULT_GEF_SCF_PER_RES_FT3,
+        }
+      }
     }
     if (input.fluid_type === 'gas_condensate') {
       out = ensureGasCondensateFields(out)
     }
+    out = ensurePetrelGefDist(out)
   }
 
   return out
